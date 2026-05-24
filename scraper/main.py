@@ -44,7 +44,7 @@ async def main():
     logger.info("Starting Telegram Gift Card Scraper")
 
     config = ScraperConfig()
-    matcher = Matcher()
+    matcher = Matcher(target_amount=50.0)
     bot_client = BotClient(config)
     refresher = Refresher(bot_client, config)
     purchaser = Purchaser(bot_client)
@@ -58,6 +58,13 @@ async def main():
     except Exception as e:
         logger.error("Failed to start Telegram client: %s", e)
         sys.exit(1)
+
+    bot_entity = await bot_client.get_bot_entity()
+
+    # Navigate to Listings with GiftCardMall filter
+    nav_success = await bot_client.navigate_to_listings(bot_entity)
+    if not nav_success:
+        logger.warning("Navigation to listings failed — will try to refresh current view")
 
     # Connect to Flask backend
     try:
@@ -73,7 +80,7 @@ async def main():
 
     async def on_refresh_text(text: str):
         """Called on each successful refresh. Parse and act on matches."""
-        nonlocal matcher, refresher, ws_client, purchaser, config
+        nonlocal matcher, refresher, ws_client, purchaser, config, bot_entity, bot_client
 
         matches = matcher.find_matches(text)
         if not matches:
@@ -81,9 +88,31 @@ async def main():
 
         for match in matches:
             logger.info(
-                "TARGET CARD DETECTED: %s (row %d)",
+                "🎯 $50 CARD DETECTED: %s (row %d)",
                 match.card_text,
                 match.row_index,
+            )
+
+            # Step 1: Click Purchase to check registration status
+            logger.info("Checking registration status by clicking Purchase...")
+            is_unregistered = await bot_client.check_registration(
+                bot_entity, match.row_index
+            )
+
+            if is_unregistered is False:
+                # Card is registered — not our target
+                logger.info("Card is REGISTERED — skipping")
+                await bot_client.go_back_to_listings(bot_entity)
+                continue
+
+            if is_unregistered is None:
+                # Could not determine status — alert user anyway for manual check
+                logger.warning("Could not determine registration — alerting user for manual verification")
+
+            # Card is unregistered (or status unknown) — this is our target!
+            logger.info(
+                "✅ UNREGISTERED $50 CARD CONFIRMED: %s",
+                match.card_text,
             )
 
             # Notify backend
@@ -99,7 +128,7 @@ async def main():
             if ws_client._connected:
                 decision = await ws_client.wait_for_approval(config.match_timeout)
             else:
-                # No backend — auto-deny after timeout so printing doesn't block
+                # No backend — auto-deny after timeout
                 logger.info("No backend — skipping purchase for %s", match.card_text)
                 decision = False
 
@@ -115,7 +144,8 @@ async def main():
             else:
                 logger.info("Match expired — no action taken for %s", match.card_text)
 
-            # Resume polling
+            # Go back to listings and resume polling
+            await bot_client.go_back_to_listings(bot_entity)
             refresher.resume()
 
     # Start the polling loop
