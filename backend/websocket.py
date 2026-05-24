@@ -7,6 +7,7 @@ from flask import request
 from flask_socketio import SocketIO, emit
 
 from .config import BackendConfig
+from .discord_notifier import notify_match
 from .store import MatchStore
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,20 @@ def register_socketio_events(
         if match:
             logger.info("Match received and stored: %s", card_text)
             emit("match_found", _match_to_dict(match), broadcast=True)
+
+            # Send Discord DM notification (fire-and-forget)
+            match_data = {
+                "row_index": row_index,
+                "card_text": card_text,
+                "price": price,
+            }
+            try:
+                import asyncio
+                asyncio.create_task(
+                    notify_match(config.discord_bot_token, config.discord_user_id, match_data)
+                )
+            except Exception as e:
+                logger.warning("Failed to queue Discord notification: %s", e)
         else:
             logger.warning("Match rejected — another match is already pending")
             emit("match_rejected", {
