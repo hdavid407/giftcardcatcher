@@ -9,7 +9,7 @@ import CardGrid from "./components/CardGrid";
 import SettingsPanel from "./components/SettingsPanel";
 
 export default function App() {
-  const { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, resetMatch } = useSocket();
+  const { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, scraperState, sendControl, resetMatch } = useSocket();
   const [showSettings, setShowSettings] = useState(false);
 
   const handleApproved = useCallback(() => {
@@ -62,6 +62,10 @@ export default function App() {
           scrapeCount={scrapeCount}
           cardCount={cards.length}
           targetAmount={targetAmount}
+          scraperState={scraperState}
+          onPause={() => sendControl("pause")}
+          onResume={() => sendControl("resume")}
+          onRestart={() => sendControl("restart")}
         />
 
         {/* Card Grid */}

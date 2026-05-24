@@ -17,6 +17,7 @@ class Refresher:
         self.bot_client = bot_client
         self.config = config
         self._running = False
+        self._user_paused = False
         self._pause_until: float = 0.0
         self._last_refresh: Optional[float] = None
         self._total_refreshes = 0
@@ -50,8 +51,25 @@ class Refresher:
         self._pause_until = 0.0
         logger.info("Refresher resumed")
 
+    def pause_user(self):
+        """Pause refreshing indefinitely (user-initiated)."""
+        self._user_paused = True
+        logger.info("Refresher paused by user")
+
+    def resume_user(self):
+        """Resume refreshing (user-initiated)."""
+        self._user_paused = False
+        logger.info("Refresher resumed by user")
+
+    @property
+    def is_user_paused(self) -> bool:
+        """Return whether the refresher is paused by user."""
+        return self._user_paused
+
     async def refresh_once(self) -> Optional[str]:
         """Perform a single refresh cycle. Returns the bot message text or None."""
+        if self._user_paused:
+            return None
         if time.time() < self._pause_until:
             return None
 

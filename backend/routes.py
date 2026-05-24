@@ -70,3 +70,8 @@ def register_routes(app: Flask, store: MatchStore, socketio: SocketIO, config: B
         socketio.emit("target_amount_changed", {"amount": float(amount)})
 
         return {"status": "updated", "target_amount": float(amount)}
+
+    @app.route("/api/scraper/status")
+    def get_scraper_status():
+        """Get the current scraper state."""
+        return store.get_scraper_state()

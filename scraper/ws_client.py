@@ -67,6 +67,22 @@ class ScraperWSClient:
         if self._connected:
             await self._sio.disconnect()
 
+    def set_control_handler(self, handler: Callable[[str], None]):
+        """Set a callback for scraper_control events from the backend.
+
+        handler(action: str) where action is "pause", "resume", or "restart".
+        """
+        @self._sio.on("scraper_control")
+        def on_scraper_control(data: dict):
+            action = data.get("action", "")
+            logger.info("Received scraper_control: %s", action)
+            handler(action)
+
+    async def emit_scraper_state(self, state: dict):
+        """Emit the current scraper state to the backend."""
+        await self._sio.emit("scraper_state", state)
+        logger.info("Emitted scraper_state: %s", state)
+
     async def emit_match(self, match: GiftCardMatch):
         """Emit a match_found event to the backend."""
         data = {

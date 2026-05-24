@@ -36,6 +36,30 @@ class BotClient:
             await self._client.disconnect()
             logger.info("Telegram client disconnected")
 
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the Telegram client is connected."""
+        return self._client is not None and self._client.is_connected()
+
+    async def restart(self) -> bool:
+        """Disconnect and reconnect the Telegram client, then re-navigate to listings."""
+        try:
+            logger.info("Restarting Telegram client...")
+            await self.stop()
+            await asyncio.sleep(1.0)
+            await self.start()
+            bot_entity = await self.get_bot_entity()
+            nav_ok = await self.navigate_to_listings(bot_entity)
+            if nav_ok:
+                logger.info("Telegram client restarted and navigated successfully")
+                return True
+            else:
+                logger.error("Restarted but navigation to listings failed")
+                return False
+        except Exception as e:
+            logger.error("Failed to restart Telegram client: %s", e)
+            return False
+
     async def get_bot_entity(self):
         """Resolve the target bot username to an entity."""
         return await self._client.get_entity(self.config.target_bot)
@@ -94,6 +118,17 @@ class BotClient:
         logger.warning("Button '%s' not found (exact=%s)", button_text, exact)
         return None
 
+    def _has_button(self, msg, button_text: str) -> bool:
+        """Check if a message contains a button matching the given text."""
+        if not msg or not msg.buttons:
+            return False
+        search = button_text.lower()
+        for row in msg.buttons:
+            for btn in row:
+                if search in self._strip_emoji_prefix(btn.text).lower():
+                    return True
+        return False
+
     async def navigate_to_listings(self, bot_entity) -> bool:
         """
         Navigate to the Listings view with GiftCardMall filter applied.
@@ -101,50 +136,95 @@ class BotClient:
         """
         logger.info("Navigating to Listings with GiftCardMall filter...")
 
-        # Step 1: Click Main Menu (or send /start)
-        result = await self.click_button_by_text(
-            bot_entity, self.config.menu_button_text, wait=2.0, exact=True
-        )
-        if result is None:
-            # Try sending /start as fallback
-            await self._client.send_message(bot_entity, "/start")
-            await asyncio.sleep(2.0)
+        # First, check if we're already on the listings screen
+        msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("Already on listings screen")
+            return True
 
-        # Step 2: Click Listings
+        # If Main Menu button is available, click it to get to a known state
+        if self._has_button(msg, self.config.menu_button_text):
+            result = await self.click_button_by_text(
+                bot_entity, self.config.menu_button_text, wait=3.0, exact=True
+            )
+            if result is None:
+                await self._client.send_message(bot_entity, "/start")
+                await asyncio.sleep(3.0)
+        else:
+            # No Main Menu button — send /start to reset
+            await self._client.send_message(bot_entity, "/start")
+            await asyncio.sleep(3.0)
+
+        # Now try to click Listing from the main menu
         result = await self.click_button_by_text(
-            bot_entity, self.config.listings_button_text, wait=2.0, exact=True
+            bot_entity, self.config.listings_button_text, wait=3.0, exact=True
         )
         if result is None:
             logger.error("Could not find Listings button")
             return False
 
-        # Step 3: Click Filters
+        # Check if we're now on listings (filter may persist)
+        msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("On listings screen after clicking Listing (filter persisted)")
+            return True
+
+        # We're not on listings — likely on a screen that needs Filters navigation
+        # Try clicking Filters
         result = await self.click_button_by_text(
-            bot_entity, self.config.filters_button_text, wait=2.0, exact=True
+            bot_entity, self.config.filters_button_text, wait=3.0, exact=True
         )
         if result is None:
             logger.error("Could not find Filters button")
             return False
 
-        # Step 4: Select GiftCardMall filter
+        # Select GiftCardMall filter
         result = await self.click_button_by_text(
-            bot_entity, self.config.giftcardmall_filter_text, wait=2.0, exact=True
+            bot_entity, self.config.giftcardmall_filter_text, wait=5.0, exact=True
         )
         if result is None:
             logger.error("Could not find GiftCardMall filter")
             return False
 
-        # Step 5: Go back to listings view (filter is now applied)
+        # Poll for listings screen (Refresh button) with retries
+        for attempt in range(5):
+            await asyncio.sleep(1.0)
+            msg = await self.get_latest_message(bot_entity)
+            if self._has_button(msg, self.config.refresh_button_text):
+                logger.info("On listings screen after filter selection")
+                return True
+
+        # Try Back to Listings
         result = await self.click_button_by_text(
-            bot_entity, "Back to Listings", wait=2.0, exact=True
+            bot_entity, "Back to Listings", wait=3.0, exact=True
         )
         if result is None:
-            logger.warning("Could not find Back to Listings button")
-            # Try alternative back buttons
             result = await self.click_button_by_text(bot_entity, "Back", wait=2.0, exact=True)
 
-        logger.info("Successfully navigated to GiftCardMall listings")
-        return True
+        # Final verification
+        msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("Successfully navigated to GiftCardMall listings")
+            return True
+
+        # Ultimate fallback: filter persists across sessions
+        logger.warning("Navigation stuck — falling back to /start → Listing")
+        await self._client.send_message(bot_entity, "/start")
+        await asyncio.sleep(3.0)
+        result = await self.click_button_by_text(
+            bot_entity, self.config.listings_button_text, wait=3.0, exact=True
+        )
+        if result is None:
+            logger.error("Fallback: Could not find Listings button after /start")
+            return False
+
+        msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("Successfully navigated to GiftCardMall listings via fallback")
+            return True
+
+        logger.error("Navigation failed — Refresh button not found")
+        return False
 
     async def send_refresh(self, bot_entity) -> Optional[str]:
         """Send the Refresh inline button callback and return the updated message text."""

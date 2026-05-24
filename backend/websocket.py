@@ -29,14 +29,27 @@ def register_socketio_events(
             client_type,
         )
 
+        nonlocal _scraper_sid
+        if client_type == "scraper":
+            _scraper_sid = request.sid
+            logger.info("Scraper registered with SID: %s", _scraper_sid)
+
         # If there's a pending match, send it to the newly connected client
         match = store.get_match()
         if match:
             emit("match_found", _match_to_dict(match))
 
+        # Send current scraper state to newly connected client
+        state = store.get_scraper_state()
+        emit("scraper_state", state)
+
     @socketio.on("disconnect")
     def on_disconnect():
         logger.info("Socket.IO client disconnected: %s", request.sid)
+        nonlocal _scraper_sid
+        if request.sid == _scraper_sid:
+            _scraper_sid = None
+            logger.info("Scraper disconnected")
 
     @socketio.on("match_found")
     def on_match_found(data: dict):
@@ -68,6 +81,8 @@ def register_socketio_events(
     @socketio.on("cards_update")
     def on_cards_update(data: dict):
         """Called when the scraper sends the full card list. Broadcasts to clients."""
+        nonlocal _scraper_sid
+        _scraper_sid = request.sid
         cards = data.get("cards", [])
         store.set_latest_cards(cards)
         emit("cards_update", data, broadcast=True)
@@ -76,9 +91,32 @@ def register_socketio_events(
     @socketio.on("scrape_count")
     def on_scrape_count(data: dict):
         """Called when the scraper sends the scrape count. Broadcasts to clients."""
+        nonlocal _scraper_sid
+        _scraper_sid = request.sid
         count = data.get("count", 0)
         store.set_scrape_count(count)
         emit("scrape_count", data, broadcast=True)
+
+    # Track scraper SID for forwarding control commands
+    _scraper_sid: Optional[str] = None
+
+    @socketio.on("scraper_control")
+    def on_scraper_control(data: dict):
+        """Forward control commands from frontend to scraper."""
+        action = data.get("action", "")
+        logger.info("Scraper control received: %s", action)
+        if _scraper_sid:
+            emit("scraper_control", data, room=_scraper_sid)
+        else:
+            logger.warning("No scraper connected — cannot forward control")
+            emit("scraper_state", {"state": "error", "reason": "scraper offline"})
+
+    @socketio.on("scraper_state")
+    def on_scraper_state(data: dict):
+        """Receive state updates from scraper and broadcast to all clients."""
+        store.set_scraper_state(data)
+        emit("scraper_state", data, broadcast=True)
+        logger.info("Scraper state updated: %s", data.get("state"))
 
 
 def _match_to_dict(match) -> Optional[dict]:

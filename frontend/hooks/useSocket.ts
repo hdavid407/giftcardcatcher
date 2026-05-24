@@ -18,6 +18,8 @@ export interface CardInfo {
   raw_text: string;
 }
 
+export type ScraperState = "running" | "paused" | "restarting" | "error" | "unknown";
+
 interface UseSocketReturn {
   status: ConnectionStatus;
   match: MatchData | null;
@@ -26,6 +28,8 @@ interface UseSocketReturn {
   cards: CardInfo[];
   scrapeCount: number;
   targetAmount: number;
+  scraperState: ScraperState;
+  sendControl: (action: "pause" | "resume" | "restart") => void;
   resetMatch: () => void;
 }
 
@@ -38,6 +42,7 @@ export function useSocket(): UseSocketReturn {
   const [cards, setCards] = useState<CardInfo[]>([]);
   const [scrapeCount, setScrapeCount] = useState<number>(0);
   const [targetAmount, setTargetAmount] = useState<number>(50);
+  const [scraperState, setScraperState] = useState<ScraperState>("unknown");
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -112,6 +117,15 @@ export function useSocket(): UseSocketReturn {
       addLog(`🎯 Target amount changed to $${data.amount}`);
     });
 
+    socket.on("scraper_state", (data: { state: ScraperState; reason?: string }) => {
+      setScraperState(data.state);
+      if (data.reason) {
+        addLog(`⚙️ Scraper ${data.state}: ${data.reason}`);
+      } else {
+        addLog(`⚙️ Scraper state: ${data.state}`);
+      }
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -121,5 +135,11 @@ export function useSocket(): UseSocketReturn {
     setMatch(null);
   }, []);
 
-  return { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, resetMatch };
+  const sendControl = useCallback((action: "pause" | "resume" | "restart") => {
+    if (socketRef.current) {
+      socketRef.current.emit("scraper_control", { action });
+    }
+  }, []);
+
+  return { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, scraperState, sendControl, resetMatch };
 }

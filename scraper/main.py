@@ -87,6 +87,35 @@ async def main():
         on_scrape_count=ws_client.emit_scrape_count if ws_client._connected else None,
     )
 
+    # Set up scraper control handler
+    def on_control(action: str):
+        """Handle pause/resume/restart commands from the frontend."""
+        if action == "pause":
+            refresher.pause_user()
+            if ws_client._connected:
+                asyncio.create_task(ws_client.emit_scraper_state({"state": "paused"}))
+        elif action == "resume":
+            refresher.resume_user()
+            if ws_client._connected:
+                asyncio.create_task(ws_client.emit_scraper_state({"state": "running"}))
+        elif action == "restart":
+            if ws_client._connected:
+                asyncio.create_task(ws_client.emit_scraper_state({"state": "restarting"}))
+
+            async def do_restart():
+                ok = await bot_client.restart()
+                if ws_client._connected:
+                    if ok:
+                        await ws_client.emit_scraper_state({"state": "running"})
+                    else:
+                        await ws_client.emit_scraper_state({"state": "error", "reason": "restart failed"})
+
+            asyncio.create_task(do_restart())
+        else:
+            logger.warning("Unknown scraper control action: %s", action)
+
+    ws_client.set_control_handler(on_control)
+
     async def on_refresh_text(text: str):
         """Called on each successful refresh. Parse and act on matches."""
         nonlocal matcher, refresher, ws_client, purchaser, config, bot_entity, bot_client

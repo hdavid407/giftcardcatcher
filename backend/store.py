@@ -34,6 +34,7 @@ class MatchStore:
         self._scrape_count: int = 0
         self._latest_cards: list[dict] = []
         self._target_amount: float = 50.0
+        self._scraper_state: dict = {"state": "unknown"}
 
     # --- Match methods ---
 
@@ -134,3 +135,15 @@ class MatchStore:
         """Get the current target amount."""
         with self._lock:
             return self._target_amount
+
+    # --- Scraper state methods ---
+
+    def set_scraper_state(self, state: dict):
+        """Update the scraper state."""
+        with self._lock:
+            self._scraper_state = state
+
+    def get_scraper_state(self) -> dict:
+        """Get the current scraper state."""
+        with self._lock:
+            return self._scraper_state.copy()

@@ -1,6 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { ConnectionStatus } from "../hooks/useSocket";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { ConnectionStatus, ScraperState } from "../hooks/useSocket";
 
 interface StatusPanelProps {
   connectionStatus: ConnectionStatus;
@@ -8,6 +8,10 @@ interface StatusPanelProps {
   scrapeCount: number;
   cardCount: number;
   targetAmount: number;
+  scraperState: ScraperState;
+  onPause: () => void;
+  onResume: () => void;
+  onRestart: () => void;
 }
 
 export default function StatusPanel({
@@ -16,6 +20,10 @@ export default function StatusPanel({
   scrapeCount,
   cardCount,
   targetAmount,
+  scraperState,
+  onPause,
+  onResume,
+  onRestart,
 }: StatusPanelProps) {
   const statusColor =
     connectionStatus === "connected"
@@ -31,11 +39,16 @@ export default function StatusPanel({
         ? "Connecting..."
         : "Disconnected";
 
+  const isPaused = scraperState === "paused";
+  const isRestarting = scraperState === "restarting";
+  const isError = scraperState === "error";
+
   return (
     <View style={styles.container}>
       <View style={styles.row}>
         <View style={[styles.dot, { backgroundColor: statusColor }]} />
         <Text style={styles.statusText}>{statusLabel}</Text>
+        {isError && <Text style={styles.errorBadge}>Error</Text>}
       </View>
       <View style={styles.metricsRow}>
         <View style={styles.metric}>
@@ -50,6 +63,30 @@ export default function StatusPanel({
           <Text style={styles.metricValue}>${targetAmount}</Text>
           <Text style={styles.metricLabel}>Target</Text>
         </View>
+      </View>
+      <View style={styles.controlsRow}>
+        {isPaused ? (
+          <Pressable style={styles.controlBtn} onPress={onResume}>
+            <Text style={styles.controlText}>▶️ Resume</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.controlBtn, isRestarting && styles.controlBtnDisabled]}
+            onPress={onPause}
+            disabled={isRestarting}
+          >
+            <Text style={styles.controlText}>⏸️ Pause</Text>
+          </Pressable>
+        )}
+        <Pressable
+          style={[styles.controlBtn, isRestarting && styles.controlBtnDisabled]}
+          onPress={onRestart}
+          disabled={isRestarting}
+        >
+          <Text style={styles.controlText}>
+            {isRestarting ? "🔄 Restarting..." : "🔄 Restart"}
+          </Text>
+        </Pressable>
       </View>
       {lastRefresh && (
         <Text style={styles.label}>
@@ -109,5 +146,39 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     fontSize: 13,
     marginTop: 2,
+  },
+  controlsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#334155",
+  },
+  controlBtn: {
+    backgroundColor: "#334155",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  controlBtnDisabled: {
+    opacity: 0.5,
+  },
+  controlText: {
+    color: "#f1f5f9",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  errorBadge: {
+    backgroundColor: "#ef4444",
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+    textTransform: "uppercase",
   },
 });
