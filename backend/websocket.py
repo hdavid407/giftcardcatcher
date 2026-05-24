@@ -65,6 +65,21 @@ def register_socketio_events(
         """Called when the scraper sends a status update. Broadcasts to clients."""
         emit("status_update", data, broadcast=True)
 
+    @socketio.on("cards_update")
+    def on_cards_update(data: dict):
+        """Called when the scraper sends the full card list. Broadcasts to clients."""
+        cards = data.get("cards", [])
+        store.set_latest_cards(cards)
+        emit("cards_update", data, broadcast=True)
+        logger.info("Cards update received: %d cards", len(cards))
+
+    @socketio.on("scrape_count")
+    def on_scrape_count(data: dict):
+        """Called when the scraper sends the scrape count. Broadcasts to clients."""
+        count = data.get("count", 0)
+        store.set_scrape_count(count)
+        emit("scrape_count", data, broadcast=True)
+
 
 def _match_to_dict(match) -> Optional[dict]:
     """Convert an ActiveMatch to a dict for JSON serialization."""

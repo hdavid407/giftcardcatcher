@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Optional
+import time
+from typing import Optional, Callable
 
 import socketio
 
@@ -114,6 +115,22 @@ class ScraperWSClient:
     async def emit_status(self, status: dict):
         """Emit a status update to the backend."""
         await self._sio.emit("status_update", status)
+
+    async def emit_cards_update(self, cards: list[dict]):
+        """Emit the full card list from the latest refresh."""
+        await self._sio.emit("cards_update", {"cards": cards, "timestamp": time.time()})
+
+    async def emit_scrape_count(self, count: int):
+        """Emit the total scrape count."""
+        await self._sio.emit("scrape_count", {"count": count})
+
+    def set_target_amount_handler(self, handler: Callable[[float], None]):
+        """Set a callback for when the target amount changes."""
+        @self._sio.on("target_amount_changed")
+        def on_target_amount_changed(data: dict):
+            amount = data.get("amount", 50.0)
+            logger.info("Received target amount change: %.2f", amount)
+            handler(amount)
 
     @staticmethod
     async def _wait_event(event: asyncio.Event):

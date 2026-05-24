@@ -78,9 +78,22 @@ async def main():
         )
         logger.warning("Running without backend — matches will be logged only")
 
+    # Set up target amount change handler
+    ws_client.set_target_amount_handler(matcher.set_target_amount)
+
+    # Set up refresher callbacks for metrics
+    refresher.set_callbacks(
+        on_cards_update=ws_client.emit_cards_update if ws_client._connected else None,
+        on_scrape_count=ws_client.emit_scrape_count if ws_client._connected else None,
+    )
+
     async def on_refresh_text(text: str):
         """Called on each successful refresh. Parse and act on matches."""
         nonlocal matcher, refresher, ws_client, purchaser, config, bot_entity, bot_client
+
+        # Parse ALL cards and emit metrics
+        all_cards = matcher.parse_all_cards(text)
+        await refresher.emit_scrape_metrics(all_cards)
 
         matches = matcher.find_matches(text)
         if not matches:
@@ -88,7 +101,8 @@ async def main():
 
         for match in matches:
             logger.info(
-                "🎯 $50 CARD DETECTED: %s (row %d)",
+                "🎯 $%.2f CARD DETECTED: %s (row %d)",
+                matcher.target_amount,
                 match.card_text,
                 match.row_index,
             )
@@ -111,7 +125,8 @@ async def main():
 
             # Card is unregistered (or status unknown) — this is our target!
             logger.info(
-                "✅ UNREGISTERED $50 CARD CONFIRMED: %s",
+                "✅ UNREGISTERED $%.2f CARD CONFIRMED: %s",
+                matcher.target_amount,
                 match.card_text,
             )
 

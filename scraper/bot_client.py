@@ -46,31 +46,52 @@ class BotClient:
             return msg
         return None
 
-    async def click_button_by_text(self, bot_entity, button_text: str, wait: float = 1.5) -> Optional[str]:
+    @staticmethod
+    def _strip_emoji_prefix(text: str) -> str:
+        """Remove leading emoji characters, variation selectors, and whitespace."""
+        import unicodedata
+        cleaned = text.lstrip()
+        while cleaned:
+            cat = unicodedata.category(cleaned[0])
+            if cat.startswith("So") or cat.startswith("Mn") or cat.startswith("Mc") or cat == "Cf":
+                cleaned = cleaned[1:]
+            else:
+                break
+        return cleaned.lstrip()
+
+    async def click_button_by_text(
+        self,
+        bot_entity,
+        button_text: str,
+        wait: float = 1.5,
+        exact: bool = False,
+    ) -> Optional[str]:
         """Find and click a button by its text, then return the updated message text.
 
-        Uses word-boundary matching to avoid false positives (e.g. "Listing"
-        matching "Cents Listings").
+        Args:
+            exact: If True, require exact match after stripping emoji.
+                   If False, allow substring match (safe for unique texts like Refresh).
         """
-        import re
-
         msg = await self.get_latest_message(bot_entity)
         if not msg or not msg.buttons:
             return None
 
-        # Build a regex that matches the text as a whole word/phrase
-        pattern = re.compile(r"\b" + re.escape(button_text.lower()) + r"\b")
-
+        search_lower = button_text.lower()
         for row in msg.buttons:
             for btn in row:
-                if pattern.search(btn.text.lower()):
+                btn_clean = self._strip_emoji_prefix(btn.text).lower()
+                if exact:
+                    matched = btn_clean == search_lower
+                else:
+                    matched = search_lower in btn_clean
+                if matched:
                     await btn.click()
                     logger.info("Clicked button: '%s'", btn.text)
                     await asyncio.sleep(wait)
                     updated = await self.get_latest_message(bot_entity)
                     return updated.text if updated else None
 
-        logger.warning("Button '%s' not found", button_text)
+        logger.warning("Button '%s' not found (exact=%s)", button_text, exact)
         return None
 
     async def navigate_to_listings(self, bot_entity) -> bool:
@@ -81,27 +102,33 @@ class BotClient:
         logger.info("Navigating to Listings with GiftCardMall filter...")
 
         # Step 1: Click Main Menu (or send /start)
-        result = await self.click_button_by_text(bot_entity, self.config.menu_button_text, wait=2.0)
+        result = await self.click_button_by_text(
+            bot_entity, self.config.menu_button_text, wait=2.0, exact=True
+        )
         if result is None:
             # Try sending /start as fallback
             await self._client.send_message(bot_entity, "/start")
             await asyncio.sleep(2.0)
 
         # Step 2: Click Listings
-        result = await self.click_button_by_text(bot_entity, self.config.listings_button_text, wait=2.0)
+        result = await self.click_button_by_text(
+            bot_entity, self.config.listings_button_text, wait=2.0, exact=True
+        )
         if result is None:
             logger.error("Could not find Listings button")
             return False
 
         # Step 3: Click Filters
-        result = await self.click_button_by_text(bot_entity, self.config.filters_button_text, wait=2.0)
+        result = await self.click_button_by_text(
+            bot_entity, self.config.filters_button_text, wait=2.0, exact=True
+        )
         if result is None:
             logger.error("Could not find Filters button")
             return False
 
         # Step 4: Select GiftCardMall filter
         result = await self.click_button_by_text(
-            bot_entity, self.config.giftcardmall_filter_text, wait=2.0
+            bot_entity, self.config.giftcardmall_filter_text, wait=2.0, exact=True
         )
         if result is None:
             logger.error("Could not find GiftCardMall filter")
@@ -109,12 +136,12 @@ class BotClient:
 
         # Step 5: Go back to listings view (filter is now applied)
         result = await self.click_button_by_text(
-            bot_entity, "Back to Listings", wait=2.0
+            bot_entity, "Back to Listings", wait=2.0, exact=True
         )
         if result is None:
             logger.warning("Could not find Back to Listings button")
             # Try alternative back buttons
-            result = await self.click_button_by_text(bot_entity, "Back", wait=2.0)
+            result = await self.click_button_by_text(bot_entity, "Back", wait=2.0, exact=True)
 
         logger.info("Successfully navigated to GiftCardMall listings")
         return True

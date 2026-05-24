@@ -50,3 +50,23 @@ def register_routes(app: Flask, store: MatchStore, socketio: SocketIO, config: B
             socketio.emit("purchase_denied", _match_to_dict(match))
             return {"status": "denied", "match": _match_to_dict(match)}
         return {"error": "No pending match to deny"}, 404
+
+    @app.route("/api/target_amount", methods=["POST"])
+    def set_target_amount():
+        """Update the target amount the scraper watches for."""
+        if not _check_api_key(request, config):
+            return {"error": "Unauthorized"}, 401
+
+        data = request.get_json() or {}
+        amount = data.get("amount")
+
+        if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+            return {"error": "Invalid amount. Must be a positive number."}, 400
+
+        store.set_target_amount(float(amount))
+        logger.info("Target amount updated to %.2f", amount)
+
+        # Notify the scraper
+        socketio.emit("target_amount_changed", {"amount": float(amount)})
+
+        return {"status": "updated", "target_amount": float(amount)}

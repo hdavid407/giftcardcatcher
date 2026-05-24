@@ -1,14 +1,16 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, SafeAreaView } from "react-native";
+import { View, Text, StyleSheet, SafeAreaView, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSocket } from "./hooks/useSocket";
 import StatusPanel from "./components/StatusPanel";
 import LogStream from "./components/LogStream";
 import MatchAlert from "./components/MatchAlert";
+import CardGrid from "./components/CardGrid";
+import SettingsPanel from "./components/SettingsPanel";
 
 export default function App() {
-  const { status, match, logs, lastRefresh, resetMatch } = useSocket();
-  const [totalRefreshes] = useState(0);
+  const { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, resetMatch } = useSocket();
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleApproved = useCallback(() => {
     resetMatch();
@@ -28,19 +30,46 @@ export default function App() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Gift Card Monitor</Text>
-        <Text style={styles.subtitle}>Watching for $50 GiftCardMall</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Gift Card Monitor</Text>
+            <Text style={styles.subtitle}>
+              Watching for ${targetAmount} GiftCardMall
+            </Text>
+          </View>
+          <Text
+            style={styles.settingsToggle}
+            onPress={() => setShowSettings((s) => !s)}
+          >
+            ⚙️
+          </Text>
+        </View>
       </View>
 
-      {/* Status */}
-      <StatusPanel
-        connectionStatus={status}
-        lastRefresh={lastRefresh}
-        totalRefreshes={totalRefreshes}
-      />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {/* Settings Panel */}
+        {showSettings && (
+          <SettingsPanel
+            currentAmount={targetAmount}
+            onAmountChanged={() => {}}
+          />
+        )}
 
-      {/* Log Stream */}
-      <LogStream logs={logs} />
+        {/* Status */}
+        <StatusPanel
+          connectionStatus={status}
+          lastRefresh={lastRefresh}
+          scrapeCount={scrapeCount}
+          cardCount={cards.length}
+          targetAmount={targetAmount}
+        />
+
+        {/* Card Grid */}
+        <CardGrid cards={cards} />
+
+        {/* Log Stream */}
+        <LogStream logs={logs} />
+      </ScrollView>
 
       {/* Match Alert Overlay */}
       {match && (
@@ -63,7 +92,12 @@ const styles = StyleSheet.create({
     paddingTop: 50,
   },
   header: {
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   title: {
     color: "#f1f5f9",
@@ -74,5 +108,15 @@ const styles = StyleSheet.create({
     color: "#64748b",
     fontSize: 14,
     marginTop: 2,
+  },
+  settingsToggle: {
+    fontSize: 24,
+    padding: 8,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
 });

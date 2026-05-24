@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import time
-from typing import Optional
+from typing import Optional, Callable
 
 from .bot_client import BotClient
 from .config import ScraperConfig
+from .matcher import CardInfo
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class Refresher:
         self._pause_until: float = 0.0
         self._last_refresh: Optional[float] = None
         self._total_refreshes = 0
+        self._on_cards_update: Optional[Callable] = None
+        self._on_scrape_count: Optional[Callable] = None
 
     @property
     def last_refresh(self) -> Optional[float]:
@@ -27,6 +30,15 @@ class Refresher:
     @property
     def total_refreshes(self) -> int:
         return self._total_refreshes
+
+    def set_callbacks(
+        self,
+        on_cards_update: Optional[Callable] = None,
+        on_scrape_count: Optional[Callable] = None,
+    ):
+        """Set callbacks for emitting events to the backend."""
+        self._on_cards_update = on_cards_update
+        self._on_scrape_count = on_scrape_count
 
     def pause(self, duration_seconds: float):
         """Pause refreshing for a given duration (e.g. during a pending match)."""
@@ -52,6 +64,33 @@ class Refresher:
         except Exception as e:
             logger.error("Refresh failed: %s", e)
             return None
+
+    async def emit_scrape_metrics(self, cards: list[CardInfo]):
+        """Emit scrape count and cards update to backend."""
+        if self._on_scrape_count:
+            try:
+                await self._on_scrape_count(self._total_refreshes)
+            except Exception as e:
+                logger.error("Failed to emit scrape count: %s", e)
+
+        if self._on_cards_update and cards:
+            try:
+                cards_data = [
+                    {
+                        "card_number": c.card_number,
+                        "bin": c.bin,
+                        "amount": c.amount,
+                        "currency": c.currency,
+                        "discount": c.discount,
+                        "button_row": c.button_row,
+                        "is_match": c.is_match,
+                        "raw_text": c.raw_text,
+                    }
+                    for c in cards
+                ]
+                await self._on_cards_update(cards_data)
+            except Exception as e:
+                logger.error("Failed to emit cards update: %s", e)
 
     async def poll_loop(self, on_text: callable):
         """Continuously poll the bot, calling on_text with each message."""

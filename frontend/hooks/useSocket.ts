@@ -7,11 +7,25 @@ const BACKEND_URL =
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
+export interface CardInfo {
+  card_number: number;
+  bin: string;
+  amount: number;
+  currency: string;
+  discount: number | null;
+  button_row: number;
+  is_match: boolean;
+  raw_text: string;
+}
+
 interface UseSocketReturn {
   status: ConnectionStatus;
   match: MatchData | null;
   logs: string[];
   lastRefresh: string | null;
+  cards: CardInfo[];
+  scrapeCount: number;
+  targetAmount: number;
   resetMatch: () => void;
 }
 
@@ -21,6 +35,9 @@ export function useSocket(): UseSocketReturn {
   const [match, setMatch] = useState<MatchData | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [cards, setCards] = useState<CardInfo[]>([]);
+  const [scrapeCount, setScrapeCount] = useState<number>(0);
+  const [targetAmount, setTargetAmount] = useState<number>(50);
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -81,6 +98,20 @@ export function useSocket(): UseSocketReturn {
       }
     });
 
+    socket.on("cards_update", (data: { cards: CardInfo[]; timestamp: number }) => {
+      setCards(data.cards);
+      addLog(`📋 Cards updated: ${data.cards.length} cards`);
+    });
+
+    socket.on("scrape_count", (data: { count: number }) => {
+      setScrapeCount(data.count);
+    });
+
+    socket.on("target_amount_changed", (data: { amount: number }) => {
+      setTargetAmount(data.amount);
+      addLog(`🎯 Target amount changed to $${data.amount}`);
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -90,5 +121,5 @@ export function useSocket(): UseSocketReturn {
     setMatch(null);
   }, []);
 
-  return { status, match, logs, lastRefresh, resetMatch };
+  return { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, resetMatch };
 }
