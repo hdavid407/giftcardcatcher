@@ -69,7 +69,6 @@ async def main():
 
     # Verify the filter is actually active (content-based check)
     if config.filter_verification_enabled:
-        verifier = FilterVerifier(config.giftcardmall_filter_text)
         verified = False
         for attempt in range(1, config.filter_verification_retries + 1):
             verified = await bot_client.verify_filter(bot_entity)
@@ -89,11 +88,13 @@ async def main():
                 "Filter verification failed after %d attempts — stopping scraper",
                 config.filter_verification_retries,
             )
-            if ws_client._connected:
+            try:
                 await ws_client.emit_scraper_state({
                     "state": "error",
                     "reason": "filter_verification_failed",
                 })
+            except Exception:
+                pass  # Backend not connected — error already logged
             await bot_client.stop()
             sys.exit(1)
     else:
