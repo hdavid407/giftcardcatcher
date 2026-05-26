@@ -163,13 +163,8 @@ class BotClient:
             logger.error("Could not find Listings button")
             return False
 
-        # Check if we're now on listings (filter may persist)
-        msg = await self.get_latest_message(bot_entity)
-        if self._has_button(msg, self.config.refresh_button_text):
-            logger.info("On listings screen after clicking Listing (filter persisted)")
-            return True
-
-        # We're not on listings — likely on a screen that needs Filters navigation
+        # Always apply the GiftCardMall filter (do not short-circuit even if
+        # the Refresh button is visible — Listings shows all cards by default)
         # Try clicking Filters
         result = await self.click_button_by_text(
             bot_entity, self.config.filters_button_text, wait=3.0, exact=True
