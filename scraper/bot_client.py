@@ -6,6 +6,7 @@ from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
 from .config import ScraperConfig
+from .filter_verifier import FilterVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +137,8 @@ class BotClient:
         """
         logger.info("Navigating to Listings with GiftCardMall filter...")
 
-        # First, check if we're already on the listings screen
+        # Get the current message to decide how to reach the main menu
         msg = await self.get_latest_message(bot_entity)
-        if self._has_button(msg, self.config.refresh_button_text):
-            logger.info("Already on listings screen")
-            return True
 
         # If Main Menu button is available, click it to get to a known state
         if self._has_button(msg, self.config.menu_button_text):
@@ -287,3 +285,27 @@ class BotClient:
         await asyncio.sleep(2.0)
         logger.info("Sent /start as fallback to return to menu")
         return True
+
+    async def verify_filter(self, bot_entity) -> bool:
+        """Do a test refresh and verify the GiftCardMall filter is active.
+        Returns True if verified, False otherwise."""
+        logger.info("Verifying filter is active...")
+
+        # Do a test refresh to get the latest message
+        text = await self.send_refresh(bot_entity)
+        if text is None:
+            logger.warning("Could not get message text for filter verification")
+            return False
+
+        verifier = FilterVerifier(self.config.giftcardmall_filter_text)
+        is_ok = verifier.is_correct_filter(text)
+
+        if is_ok:
+            logger.info("Filter verified: %s", self.config.giftcardmall_filter_text)
+        else:
+            logger.warning(
+                "Filter verification failed — expected '%s'",
+                self.config.giftcardmall_filter_text,
+            )
+
+        return is_ok
