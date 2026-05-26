@@ -23,6 +23,12 @@ class ScraperConfig:
         self.listings_button_text: str = os.getenv("LISTINGS_BUTTON_TEXT", "Listings")
         self.filters_button_text: str = os.getenv("FILTERS_BUTTON_TEXT", "Filters")
         self.giftcardmall_filter_text: str = os.getenv("GIFTCARDMALL_FILTER_TEXT", "GiftCardMall")
+        self.filter_verification_enabled: bool = (
+            os.getenv("FILTER_VERIFICATION_ENABLED", "true").lower() == "true"
+        )
+        self.filter_verification_retries: int = int(
+            os.getenv("FILTER_VERIFICATION_RETRIES", "3")
+        )
         self.poll_interval: int = int(os.getenv("POLL_INTERVAL_SECONDS", "5"))
         self.match_timeout: int = int(os.getenv("MATCH_TIMEOUT_SECONDS", "180"))
         self.backend_url: str = os.getenv("BACKEND_URL", "http://localhost:5000")
