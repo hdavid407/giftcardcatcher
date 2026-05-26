@@ -42,3 +42,13 @@ class TestFilterVerifier:
         text = "Filters:   GiftCardMall  \nPage 1/3"
         verifier = FilterVerifier("GiftCardMall")
         assert verifier.extract_filter(text) == "GiftCardMall"
+
+    def test_backtick_stripping(self):
+        text = "Filters: `None`\nPage 1/3"
+        verifier = FilterVerifier("GiftCardMall")
+        assert verifier.extract_filter(text) == "None"
+
+    def test_backtick_stripping_correct_filter(self):
+        text = "Filters: `GiftCardMall`\nPage 1/3"
+        verifier = FilterVerifier("GiftCardMall")
+        assert verifier.is_correct_filter(text) is True

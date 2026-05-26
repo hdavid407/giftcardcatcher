@@ -15,10 +15,11 @@ class FilterVerifier:
 
     def extract_filter(self, message_text: str) -> Optional[str]:
         """Extract the filter name from the bot message text.
-        Returns the filter name, or None if the Filters line is not found."""
+        Returns the filter name, or None if the Filters line is not found.
+        Strips backtick characters that Telegram uses for markdown formatting."""
         match = self.FILTER_PATTERN.search(message_text)
         if match:
-            return match.group(1)
+            return match.group(1).strip("`'\"")
         return None
 
     def is_correct_filter(self, message_text: str) -> bool:

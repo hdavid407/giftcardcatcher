@@ -137,11 +137,12 @@ class BotClient:
         """
         logger.info("Navigating to Listings with GiftCardMall filter...")
 
-        # First, check if we're already on the listings screen
+        # Get the current message to decide how to reach the main menu.
+        # IMPORTANT: Do NOT short-circuit just because a Refresh button is
+        # visible — both unfiltered and filtered Listings show Refresh, so
+        # we can't tell if the GiftCardMall filter is active. Always reset
+        # and re-apply the filter.
         msg = await self.get_latest_message(bot_entity)
-        if self._has_button(msg, self.config.refresh_button_text):
-            logger.info("Already on listings screen")
-            return True
 
         # If Main Menu button is available, click it to get to a known state
         if self._has_button(msg, self.config.menu_button_text):
