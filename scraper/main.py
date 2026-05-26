@@ -10,6 +10,7 @@ import sys
 
 from .bot_client import BotClient
 from .config import ScraperConfig
+from .filter_verifier import FilterVerifier
 from .matcher import Matcher
 from .purchaser import Purchaser
 from .refresher import Refresher
@@ -65,6 +66,38 @@ async def main():
     nav_success = await bot_client.navigate_to_listings(bot_entity)
     if not nav_success:
         logger.warning("Navigation to listings failed — will try to refresh current view")
+
+    # Verify the filter is actually active (content-based check)
+    if config.filter_verification_enabled:
+        verifier = FilterVerifier(config.giftcardmall_filter_text)
+        verified = False
+        for attempt in range(1, config.filter_verification_retries + 1):
+            verified = await bot_client.verify_filter(bot_entity)
+            if verified:
+                break
+            logger.warning(
+                "Filter verification failed (attempt %d/%d) — retrying navigation...",
+                attempt,
+                config.filter_verification_retries,
+            )
+            nav_success = await bot_client.navigate_to_listings(bot_entity)
+            if not nav_success:
+                logger.error("Navigation retry failed on attempt %d", attempt)
+
+        if not verified:
+            logger.error(
+                "Filter verification failed after %d attempts — stopping scraper",
+                config.filter_verification_retries,
+            )
+            if ws_client._connected:
+                await ws_client.emit_scraper_state({
+                    "state": "error",
+                    "reason": "filter_verification_failed",
+                })
+            await bot_client.stop()
+            sys.exit(1)
+    else:
+        logger.info("Filter verification disabled — skipping")
 
     # Connect to Flask backend
     try:
