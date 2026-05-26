@@ -137,8 +137,11 @@ class BotClient:
         """
         logger.info("Navigating to Listings with GiftCardMall filter...")
 
-        # Get the current message to decide how to reach the main menu
+        # First, check if we're already on the listings screen
         msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("Already on listings screen")
+            return True
 
         # If Main Menu button is available, click it to get to a known state
         if self._has_button(msg, self.config.menu_button_text):
