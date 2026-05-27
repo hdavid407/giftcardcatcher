@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSocket } from "./hooks/useSocket";
 import StatusPanel from "./components/StatusPanel";
+import AutoBuyToggle from "./components/AutoBuyToggle";
 import LogStream from "./components/LogStream";
 import CardGrid from "./components/CardGrid";
 import SettingsPanel from "./components/SettingsPanel";
@@ -20,10 +21,12 @@ export default function App() {
     scrapeCount,
     targetAmount,
     scraperState,
+    autoBuyEnabled,
     sendControl,
     initiatePurchase,
     confirmPurchase,
     cancelPurchase,
+    toggleAutoBuy,
   } = useSocket();
   const [showSettings, setShowSettings] = useState(false);
 
@@ -81,6 +84,7 @@ export default function App() {
           onPause={() => sendControl("pause")}
           onResume={() => sendControl("resume")}
           onRestart={() => sendControl("restart")}
+          autoBuyToggle={<AutoBuyToggle enabled={autoBuyEnabled} onToggle={toggleAutoBuy} />}
         />
 
         {/* Card Grid */}

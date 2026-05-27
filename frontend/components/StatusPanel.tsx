@@ -12,6 +12,7 @@ interface StatusPanelProps {
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
+  autoBuyToggle?: React.ReactNode;
 }
 
 export default function StatusPanel({
@@ -24,6 +25,7 @@ export default function StatusPanel({
   onPause,
   onResume,
   onRestart,
+  autoBuyToggle,
 }: StatusPanelProps) {
   const statusColor =
     connectionStatus === "connected"
@@ -87,6 +89,7 @@ export default function StatusPanel({
             {isRestarting ? "🔄 Restarting..." : "🔄 Restart"}
           </Text>
         </Pressable>
+        {autoBuyToggle}
       </View>
       {lastRefresh && (
         <Text style={styles.label}>
