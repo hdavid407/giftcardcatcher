@@ -267,11 +267,14 @@ class BotClient:
         logger.warning("Could not find Purchase button at row %d", row_index)
         return False
 
-    async def check_registration(self, bot_entity, row_index: int) -> Optional[dict]:
+    async def check_registration(
+        self, bot_entity, row_index: int, skip_cancel: bool = False
+    ) -> Optional[dict]:
         """
         Click Purchase on a card, read its details, and return to listings.
         Returns the details dict, or None on failure.
-        Always clicks Cancel and returns to the listings view before returning.
+        Clicks Cancel and returns to the listings view before returning,
+        unless skip_cancel is True (e.g. a purchase is pending for the same card).
         """
         success = await self.click_purchase(bot_entity, row_index)
         if not success:
@@ -281,10 +284,13 @@ class BotClient:
         await asyncio.sleep(2.0)
 
         details = await self.read_card_details(bot_entity)
-        try:
-            await self.click_cancel(bot_entity)
-        except Exception:
-            logger.exception("Failed to click Cancel after reading details")
+        if not skip_cancel:
+            try:
+                await self.click_cancel(bot_entity)
+            except Exception:
+                logger.exception("Failed to click Cancel after reading details")
+        else:
+            logger.info("Skipping Cancel click for row %d (purchase pending)", row_index)
         return details
 
     async def read_card_details(self, bot_entity) -> Optional[dict]:

@@ -253,6 +253,9 @@ async def main():
                         await asyncio.sleep(3.0)
                         continue
 
+                    # Log full message text for debugging (truncate if very long)
+                    logger.debug("Poll raw message (%d chars): %s", len(text), text[:800])
+
                     # We have a result message
                     result_text = text
                     logger.info("Purchase result for row %d: %s", row_index, text[:300])
@@ -413,6 +416,17 @@ async def main():
                     match.row_index,
                 )
 
+            # If a purchase is already pending, skip verification to avoid
+            # interfering with the purchase flow. The purchase handler will
+            # read the card details directly.
+            if _pending_purchase_row is not None:
+                logger.info(
+                    "Purchase pending for row %d — skipping verification of %d match(es)",
+                    _pending_purchase_row,
+                    len(matches),
+                )
+                return
+
             # Pause refresher and verify each match sequentially
             refresher.pause(60)
             if ws_client.is_connected:
@@ -425,8 +439,19 @@ async def main():
                         "🔍 Verifying card at row %d...",
                         match.row_index,
                     )
+                    # If a purchase is pending for this exact card, skip the
+                    # Cancel click so the purchase flow can continue seamlessly.
+                    skip_cancel = (
+                        _pending_purchase_row is not None
+                        and _pending_purchase_row == match.row_index
+                    )
+                    if skip_cancel:
+                        logger.info(
+                            "Purchase pending for row %d — skipping Cancel in verification",
+                            match.row_index,
+                        )
                     details = await bot_client.check_registration(
-                        bot, match.row_index
+                        bot, match.row_index, skip_cancel=skip_cancel
                     )
                     if details is None:
                         logger.warning(
