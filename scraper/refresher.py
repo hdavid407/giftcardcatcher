@@ -76,6 +76,22 @@ class Refresher:
         try:
             bot = await self.bot_client.get_bot_entity()
             text = await self.bot_client.send_refresh(bot)
+            if text is None:
+                # Not on listings screen — try to recover
+                logger.warning("Refresh returned None — checking if re-navigation is needed")
+                on_listings = await self.bot_client.is_on_listings_screen(bot)
+                if not on_listings:
+                    logger.warning("Bot is NOT on listings screen — re-navigating...")
+                    nav_ok = await self.bot_client.navigate_to_listings(bot)
+                    if nav_ok:
+                        logger.info("Re-navigation successful — retrying refresh")
+                        text = await self.bot_client.send_refresh(bot)
+                    else:
+                        logger.error("Re-navigation failed — scraper may need manual intervention")
+                # Still increment counters so we can track attempts
+                self._last_refresh = time.time()
+                self._total_refreshes += 1
+                return text
             self._last_refresh = time.time()
             self._total_refreshes += 1
             return text

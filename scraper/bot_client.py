@@ -51,19 +51,12 @@ class BotClient:
             await self.start()
             bot_entity = await self.get_bot_entity()
             nav_ok = await self.navigate_to_listings(bot_entity)
-            if not nav_ok:
+            if nav_ok:
+                logger.info("Telegram client restarted and navigated successfully")
+                return True
+            else:
                 logger.error("Restarted but navigation to listings failed")
                 return False
-
-            # Also verify the GiftCardMall filter is active
-            if self.config.filter_verification_enabled:
-                filter_ok = await self.verify_filter(bot_entity)
-                if not filter_ok:
-                    logger.error("Restarted but filter verification failed")
-                    return False
-
-            logger.info("Telegram client restarted, navigated, and filter verified")
-            return True
         except Exception as e:
             logger.error("Failed to restart Telegram client: %s", e)
             return False
@@ -191,17 +184,28 @@ class BotClient:
             return False
 
         # Poll for listings screen (Refresh button) with retries
-        # Increased from 5s to 15s — bot may need time to apply filter
-        for attempt in range(15):
+        for attempt in range(5):
             await asyncio.sleep(1.0)
             msg = await self.get_latest_message(bot_entity)
             if self._has_button(msg, self.config.refresh_button_text):
-                logger.info("On listings screen after filter selection (attempt %d)", attempt + 1)
+                logger.info("On listings screen after filter selection")
                 return True
 
-        # Do NOT try "Back to Listings" / "Back" — that may cancel the filter.
-        # Go straight to the /start → Listing fallback to reset to known state.
-        logger.warning("Refresh button not found after 15s — falling back to /start → Listing")
+        # Try Back to Listings
+        result = await self.click_button_by_text(
+            bot_entity, "Back to Listings", wait=3.0, exact=True
+        )
+        if result is None:
+            result = await self.click_button_by_text(bot_entity, "Back", wait=2.0, exact=True)
+
+        # Final verification
+        msg = await self.get_latest_message(bot_entity)
+        if self._has_button(msg, self.config.refresh_button_text):
+            logger.info("Successfully navigated to GiftCardMall listings")
+            return True
+
+        # Ultimate fallback: filter persists across sessions
+        logger.warning("Navigation stuck — falling back to /start → Listing")
         await self._client.send_message(bot_entity, "/start")
         await asyncio.sleep(3.0)
         result = await self.click_button_by_text(
@@ -219,9 +223,31 @@ class BotClient:
         logger.error("Navigation failed — Refresh button not found")
         return False
 
+    async def is_on_listings_screen(self, bot_entity) -> bool:
+        """Check whether the current message shows the listings screen (has Refresh button)."""
+        msg = await self.get_latest_message(bot_entity)
+        return self._has_button(msg, self.config.refresh_button_text)
+
     async def send_refresh(self, bot_entity) -> Optional[str]:
         """Send the Refresh inline button callback and return the updated message text."""
-        return await self.click_button_by_text(bot_entity, self.config.refresh_button_text, wait=1.5)
+        result = await self.click_button_by_text(
+            bot_entity, self.config.refresh_button_text, wait=1.5
+        )
+        if result is None:
+            # Diagnostic: log what screen we're actually on
+            msg = await self.get_latest_message(bot_entity)
+            if msg:
+                preview = (msg.text or "[no text]").replace("\n", " ")[:150]
+                has_buttons = bool(msg.buttons)
+                logger.warning(
+                    "Refresh failed — bot not on listings screen. "
+                    "Preview: '%s...' | Has buttons: %s",
+                    preview,
+                    has_buttons,
+                )
+            else:
+                logger.warning("Refresh failed — no message from bot")
+        return result
 
     async def click_purchase(self, bot_entity, row_index: int) -> bool:
         """Click the Purchase button at the given row index."""
