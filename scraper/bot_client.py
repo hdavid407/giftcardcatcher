@@ -316,25 +316,25 @@ class BotClient:
             "raw_text": raw_text,
         }
 
-        id_match = re.search(r"ID:\s*(\d+)", raw_text)
+        id_match = re.search(r"ID:\s*`?(\d+)`?", raw_text)
         if id_match:
             details["id"] = id_match.group(1)
 
-        bin_match = re.search(r"BIN:\s*([\dxX]+)", raw_text)
+        bin_match = re.search(r"BIN:\s*`?([\dxX]+)`?", raw_text)
         if bin_match:
             details["bin"] = bin_match.group(1)
 
-        balance_match = re.search(r"Amount:\s*\$?(\d+(?:\.\d{1,2})?)", raw_text)
+        balance_match = re.search(r"(?:Amount|Balance):\s*`?\$?(\d+(?:\.\d{1,2})?)`?", raw_text)
         if balance_match:
-            details["balance"] = balance_match.group(1)
+            details["balance"] = float(balance_match.group(1))
 
-        price_match = re.search(r"Price:\s*\$?(\d+(?:\.\d{1,2})?)", raw_text)
+        price_match = re.search(r"Price:\s*`?\$?(\d+(?:\.\d{1,2})?)`?", raw_text)
         if price_match:
-            details["price"] = price_match.group(1)
+            details["price"] = float(price_match.group(1))
 
-        rate_match = re.search(r"[(\s](\d+)%[)\s]", raw_text)
+        rate_match = re.search(r"Rate:\s*`?(\d+)%`?", raw_text)
         if rate_match:
-            details["rate"] = rate_match.group(1)
+            details["rate"] = int(rate_match.group(1))
 
         text_lower = raw_text.lower()
         if "unregistered" in text_lower or "un-register" in text_lower:
