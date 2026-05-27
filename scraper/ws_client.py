@@ -14,8 +14,10 @@ class ScraperWSClient:
     """
     Socket.IO client connecting the scraper to the Flask backend.
 
-    Listens for: purchase_card, scraper_control, target_amount_changed
-    Emits: status_update, cards_update, scrape_count, scraper_state
+    Listens for: scraper_control, target_amount_changed, initiate_purchase,
+                 confirm_purchase, cancel_purchase
+    Emits: status_update, cards_update, scrape_count, scraper_state,
+           card_status, purchase_preview, purchase_complete
     """
 
     def __init__(self, config: ScraperConfig):
@@ -147,7 +149,10 @@ class ScraperWSClient:
                 logger.warning("initiate_purchase received without row_index")
                 return
             logger.info("Received initiate_purchase for row %d", row_index)
-            handler(row_index)
+            try:
+                handler(row_index)
+            except Exception as e:
+                logger.error("Handler failed for row %d: %s", row_index, e)
 
     def set_confirm_purchase_handler(self, handler: Callable[[int], None]):
         """Set a callback for confirm_purchase events from the backend."""
@@ -159,7 +164,10 @@ class ScraperWSClient:
                 logger.warning("confirm_purchase received without row_index")
                 return
             logger.info("Received confirm_purchase for row %d", row_index)
-            handler(row_index)
+            try:
+                handler(row_index)
+            except Exception as e:
+                logger.error("Handler failed for row %d: %s", row_index, e)
 
     def set_cancel_purchase_handler(self, handler: Callable[[int], None]):
         """Set a callback for cancel_purchase events from the backend."""
@@ -171,4 +179,7 @@ class ScraperWSClient:
                 logger.warning("cancel_purchase received without row_index")
                 return
             logger.info("Received cancel_purchase for row %d", row_index)
-            handler(row_index)
+            try:
+                handler(row_index)
+            except Exception as e:
+                logger.error("Handler failed for row %d: %s", row_index, e)

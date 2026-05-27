@@ -126,7 +126,7 @@ async def main():
 
     # When the scraper reconnects to the backend, re-sync state
     async def on_reconnect():
-        if refresher.is_user_paused():
+        if refresher.is_user_paused:
             state = "paused"
         elif refresher.last_refresh is not None:
             state = "running"
@@ -197,6 +197,12 @@ async def main():
 
         except Exception as e:
             logger.error("Initiate purchase failed for row %d: %s", row_index, e)
+            if ws_client.is_connected:
+                await ws_client.emit_purchase_complete({
+                    "card_number": None,
+                    "success": False,
+                    "reason": "exception",
+                })
             _pending_purchase_row = None
             refresher.resume()
 
@@ -265,6 +271,12 @@ async def main():
 
         except Exception as e:
             logger.error("Cancel purchase failed for row %d: %s", row_index, e)
+            if ws_client.is_connected:
+                await ws_client.emit_purchase_complete({
+                    "card_number": None,
+                    "success": False,
+                    "reason": "exception",
+                })
         finally:
             _pending_purchase_row = None
             refresher.resume()
@@ -375,15 +387,21 @@ async def main():
                         card_data["price"],
                     )
 
-                    if ws_client.is_connected:
-                        await ws_client.emit_card_status(card_data)
+                    try:
+                        if ws_client.is_connected:
+                            await ws_client.emit_card_status(card_data)
+                    except Exception as e:
+                        logger.error("Failed to emit card_status: %s", e)
 
             except Exception as e:
                 logger.error("Verification failed: %s", e)
             finally:
-                refresher.resume()
-                if ws_client.is_connected:
-                    await ws_client.emit_scraper_state({"state": "running"})
+                if _pending_purchase_row is None:
+                    refresher.resume()
+                    if ws_client.is_connected:
+                        await ws_client.emit_scraper_state({"state": "running"})
+                else:
+                    logger.info("Verification done but purchase is pending — keeping refresher paused")
 
     # Start the polling loop
     logger.info("Starting poll loop for bot: %s", config.target_bot)

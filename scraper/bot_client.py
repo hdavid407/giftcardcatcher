@@ -281,9 +281,10 @@ class BotClient:
         await asyncio.sleep(2.0)
 
         details = await self.read_card_details(bot_entity)
-
-        # Always click Cancel to return to listings
-        await self.click_cancel(bot_entity)
+        try:
+            await self.click_cancel(bot_entity)
+        except Exception:
+            logger.exception("Failed to click Cancel after reading details")
         return details
 
     async def read_card_details(self, bot_entity) -> Optional[dict]:
@@ -295,6 +296,10 @@ class BotClient:
         """
         msg = await self.get_latest_message(bot_entity)
         if not msg or not msg.text:
+            return None
+
+        if not self._has_button(msg, "Cancel") and not self._has_button(msg, "Confirm"):
+            logger.warning("read_card_details: not on detail screen")
             return None
 
         raw_text = msg.text
@@ -319,11 +324,11 @@ class BotClient:
         if bin_match:
             details["bin"] = bin_match.group(1)
 
-        balance_match = re.search(r"Amount:\s*\$?([\d.]+)", raw_text)
+        balance_match = re.search(r"Amount:\s*\$?(\d+(?:\.\d{1,2})?)", raw_text)
         if balance_match:
             details["balance"] = balance_match.group(1)
 
-        price_match = re.search(r"Price:\s*\$?([\d.]+)", raw_text)
+        price_match = re.search(r"Price:\s*\$?(\d+(?:\.\d{1,2})?)", raw_text)
         if price_match:
             details["price"] = price_match.group(1)
 
