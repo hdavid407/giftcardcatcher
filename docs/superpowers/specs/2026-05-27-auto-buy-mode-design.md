@@ -83,9 +83,10 @@ A dashboard toggle that enables automatic purchase of unregistered gift cards ma
    - Send Discord notification
    - Emit `purchase_complete`
    - Emit `auto_buy_status: { enabled: false, reason: "purchase_completed" }`
-5. **If status != "unregistered" OR auto-buy is OFF:**
+5. **If status != "unregistered" (registered or unknown) OR auto-buy is OFF:**
    - Click Cancel (normal verification flow)
    - Auto-buy state unchanged
+   - **Strict rule: auto-buy NEVER triggers for registered or unknown cards**
 
 ### 4. Auto-Disable After Purchase
 
