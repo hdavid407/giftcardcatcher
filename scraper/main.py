@@ -155,31 +155,38 @@ async def main():
             bot = await bot_client.get_bot_entity()
             success = await bot_client.click_purchase(bot, row_index)
             if not success:
-                logger.error("Failed to click Purchase for row %d", row_index)
-                if ws_client.is_connected:
-                    await ws_client.emit_purchase_complete({
-                        "card_number": None,
-                        "success": False,
-                        "reason": "click_purchase_failed",
-                    })
-                _pending_purchase_row = None
-                refresher.resume()
-                return
-
-            await asyncio.sleep(2.0)
-            details = await bot_client.read_card_details(bot)
-            if details is None:
-                logger.error("Could not read card details for row %d", row_index)
-                if ws_client.is_connected:
-                    await ws_client.emit_purchase_complete({
-                        "card_number": None,
-                        "success": False,
-                        "reason": "read_details_failed",
-                    })
-                await bot_client.click_cancel(bot)
-                _pending_purchase_row = None
-                refresher.resume()
-                return
+                # We may already be on the detail screen (e.g. verification just
+                # opened it). Try reading details directly before giving up.
+                logger.warning("Purchase click failed for row %d — checking if already on detail screen", row_index)
+                await asyncio.sleep(1.0)
+                details = await bot_client.read_card_details(bot)
+                if details is None:
+                    logger.error("Failed to click Purchase and not on detail screen for row %d", row_index)
+                    if ws_client.is_connected:
+                        await ws_client.emit_purchase_complete({
+                            "card_number": None,
+                            "success": False,
+                            "reason": "click_purchase_failed",
+                        })
+                    _pending_purchase_row = None
+                    refresher.resume()
+                    return
+                logger.info("Already on detail screen for row %d, using existing details", row_index)
+            else:
+                await asyncio.sleep(2.0)
+                details = await bot_client.read_card_details(bot)
+                if details is None:
+                    logger.error("Could not read card details for row %d", row_index)
+                    if ws_client.is_connected:
+                        await ws_client.emit_purchase_complete({
+                            "card_number": None,
+                            "success": False,
+                            "reason": "read_details_failed",
+                        })
+                    await bot_client.click_cancel(bot)
+                    _pending_purchase_row = None
+                    refresher.resume()
+                    return
 
             # Find card_number from matcher cache
             card_number = None
@@ -207,18 +214,83 @@ async def main():
             refresher.resume()
 
     async def handle_confirm_purchase(row_index: int):
-        """User confirmed purchase — click Confirm."""
+        """User confirmed purchase — click Confirm and wait for bot result."""
         nonlocal _pending_purchase_row
         logger.info("Confirming purchase for row %d", row_index)
 
         try:
             bot = await bot_client.get_bot_entity()
-            success = await bot_client.click_confirm(bot)
-            if success:
-                logger.info("Purchase confirmed for row %d", row_index)
-            else:
+            clicked = await bot_client.click_confirm(bot)
+            if not clicked:
                 logger.error("Failed to click Confirm for row %d", row_index)
+                await bot_client.go_back_to_listings(bot)
+                if ws_client.is_connected:
+                    await ws_client.emit_purchase_complete({
+                        "card_number": None,
+                        "success": False,
+                        "reason": "confirm_click_failed",
+                    })
+                return
 
+            logger.info("Clicked Confirm for row %d, waiting for bot result...", row_index)
+
+            # Wait for and read the purchase result from the bot
+            purchase_success = False
+            result_reason = None
+            result_text = None
+
+            await asyncio.sleep(2.0)  # Initial wait for bot to respond
+
+            for attempt in range(15):  # Poll up to ~45 seconds
+                msg = await bot_client.get_latest_message(bot)
+                if msg and msg.text:
+                    text = msg.text
+                    text_lower = text.lower()
+
+                    # Skip transient "checking" / "please wait" messages
+                    if "checking card validity" in text_lower or "please wait" in text_lower:
+                        logger.info("Bot still checking validity... (attempt %d/15)", attempt + 1)
+                        await asyncio.sleep(3.0)
+                        continue
+
+                    # We have a result message
+                    result_text = text
+                    logger.info("Purchase result for row %d: %s", row_index, text[:300])
+
+                    # Determine success/failure from message content
+                    failure_words = ["failed", "error", "invalid", "insufficient", "not available", "sold", "refunded", "aborted", "cancelled", "declined", "expired"]
+                    success_words = ["success", "purchased", "card details", "secret", "pin", "cvv"]
+
+                    if any(word in text_lower for word in failure_words):
+                        purchase_success = False
+                        result_reason = "purchase_failed"
+                    elif any(word in text_lower for word in success_words):
+                        purchase_success = True
+                        result_reason = None
+                    elif any(emoji in text for emoji in ["⚠️", "❌", "🚫", "⛔"]):
+                        # Warning/error emoji usually indicates failure
+                        purchase_success = False
+                        result_reason = "purchase_failed"
+                    else:
+                        # Unknown result — only assume success if it looks like a full
+                        # card delivery message (has id, bin, and a delivery keyword)
+                        has_id = "id:" in text_lower
+                        has_bin = "bin:" in text_lower
+                        has_delivery_keyword = any(w in text_lower for w in ["secret", "pin", "cvv", "code", "password"])
+                        if has_id and has_bin and has_delivery_keyword:
+                            purchase_success = True
+                        else:
+                            purchase_success = False
+                            result_reason = "unknown_result"
+                    break
+
+                await asyncio.sleep(3.0)
+            else:
+                logger.warning("Timed out waiting for purchase result for row %d", row_index)
+                purchase_success = False
+                result_reason = "timeout"
+
+            # Return to listings regardless of result
             await bot_client.go_back_to_listings(bot)
 
             card_number = None
@@ -230,9 +302,11 @@ async def main():
             if ws_client.is_connected:
                 await ws_client.emit_purchase_complete({
                     "card_number": card_number,
-                    "success": success,
-                    "reason": None if success else "confirm_click_failed",
+                    "success": purchase_success,
+                    "reason": result_reason,
+                    "result_text": result_text[:500] if result_text else None,
                 })
+                logger.info("Purchase complete for row %d: success=%s reason=%s", row_index, purchase_success, result_reason)
 
         except Exception as e:
             logger.error("Confirm purchase failed for row %d: %s", row_index, e)
