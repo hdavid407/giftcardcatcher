@@ -6,15 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import { CardInfo } from "../hooks/useSocket";
+import { CardInfo, CardStatus } from "../hooks/useSocket";
 
 interface CardGridProps {
   cards: CardInfo[];
-  verifiedCards: Set<number>;
+  cardStatuses: Map<number, CardStatus>;
   onBuyCard: (rowIndex: number) => void;
 }
 
-export default function CardGrid({ cards, verifiedCards, onBuyCard }: CardGridProps) {
+export default function CardGrid({ cards, cardStatuses, onBuyCard }: CardGridProps) {
   const [buyingRow, setBuyingRow] = useState<number | null>(null);
 
   if (cards.length === 0) {
@@ -30,38 +30,52 @@ export default function CardGrid({ cards, verifiedCards, onBuyCard }: CardGridPr
     onBuyCard(item.button_row);
   };
 
-  const renderItem = ({ item }: { item: CardInfo }) => (
-    <View style={[styles.row, item.is_match && styles.matchRow]}>
-      <Text style={styles.cellNumber}>#{item.card_number}</Text>
-      <Text style={styles.cellBin}>{item.bin}</Text>
-      <Text style={styles.cellAmount}>
-        {item.currency} ${item.amount.toFixed(2)}
-      </Text>
-      <Text style={styles.cellDiscount}>
-        {item.discount ? `${item.discount}%` : "—"}
-      </Text>
-      <View style={styles.cellBuy}>
-        {item.is_match && verifiedCards.has(item.card_number) ? (
-          <TouchableOpacity
-            style={[
-              styles.buyButton,
-              buyingRow === item.button_row && styles.buyButtonDisabled,
-            ]}
-            onPress={() => handleBuy(item)}
-            disabled={buyingRow === item.button_row}
-          >
-            <Text style={styles.buyButtonText}>
-              {buyingRow === item.button_row ? "…" : "💰"}
-            </Text>
-          </TouchableOpacity>
-        ) : item.is_match ? (
-          <Text style={styles.cellBuyPlaceholder}>⏳</Text>
-        ) : (
-          <Text style={styles.cellBuyPlaceholder}>—</Text>
-        )}
+  const renderItem = ({ item }: { item: CardInfo }) => {
+    const status = cardStatuses.get(item.card_number);
+    const statusEmoji = status
+      ? status.status === "unregistered"
+        ? "🟢"
+        : status.status === "registered"
+        ? "🔴"
+        : "⚪"
+      : item.is_match
+      ? "⏳"
+      : null;
+
+    return (
+      <View style={[styles.row, item.is_match && styles.matchRow]}>
+        <Text style={styles.cellNumber}>#{item.card_number}</Text>
+        <Text style={styles.cellBin}>{item.bin}</Text>
+        <Text style={styles.cellAmount}>
+          {item.currency} ${item.amount.toFixed(2)}
+        </Text>
+        <Text style={styles.cellDiscount}>
+          {item.discount ? `${item.discount}%` : "—"}
+        </Text>
+        <View style={styles.cellStatus}>
+          <Text style={styles.statusEmoji}>{statusEmoji || "—"}</Text>
+        </View>
+        <View style={styles.cellBuy}>
+          {item.is_match ? (
+            <TouchableOpacity
+              style={[
+                styles.buyButton,
+                buyingRow === item.button_row && styles.buyButtonDisabled,
+              ]}
+              onPress={() => handleBuy(item)}
+              disabled={buyingRow === item.button_row}
+            >
+              <Text style={styles.buyButtonText}>
+                {buyingRow === item.button_row ? "…" : "💰"}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.cellBuyPlaceholder}>—</Text>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -71,6 +85,7 @@ export default function CardGrid({ cards, verifiedCards, onBuyCard }: CardGridPr
         <Text style={[styles.headerCell, { flex: 1.5 }]}>BIN</Text>
         <Text style={[styles.headerCell, { flex: 1.8 }]}>Amount</Text>
         <Text style={[styles.headerCell, { flex: 0.8 }]}>Disc</Text>
+        <Text style={[styles.headerCell, { flex: 0.7 }]}>Sts</Text>
         <Text style={[styles.headerCell, { flex: 0.7 }]}>Buy</Text>
       </View>
       <FlatList
@@ -148,6 +163,13 @@ const styles = StyleSheet.create({
   cellDiscount: {
     flex: 0.8,
     color: "#eab308",
+    fontSize: 12,
+  },
+  cellStatus: {
+    flex: 0.7,
+    alignItems: "center",
+  },
+  statusEmoji: {
     fontSize: 12,
   },
   cellBuy: {
