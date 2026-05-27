@@ -6,14 +6,38 @@ import StatusPanel from "./components/StatusPanel";
 import LogStream from "./components/LogStream";
 import CardGrid from "./components/CardGrid";
 import SettingsPanel from "./components/SettingsPanel";
+import PurchaseModal from "./components/PurchaseModal";
 
 export default function App() {
-  const { status, logs, lastRefresh, cards, verifiedCards, scrapeCount, targetAmount, scraperState, sendControl, sendPurchase } = useSocket();
+  const {
+    status,
+    logs,
+    lastRefresh,
+    cards,
+    cardStatuses,
+    purchasePreview,
+    purchaseComplete,
+    scrapeCount,
+    targetAmount,
+    scraperState,
+    sendControl,
+    initiatePurchase,
+    confirmPurchase,
+    cancelPurchase,
+  } = useSocket();
   const [showSettings, setShowSettings] = useState(false);
 
   const handleBuyCard = useCallback((rowIndex: number) => {
-    sendPurchase(rowIndex);
-  }, [sendPurchase]);
+    initiatePurchase(rowIndex);
+  }, [initiatePurchase]);
+
+  const handleConfirmPurchase = useCallback((rowIndex: number) => {
+    confirmPurchase(rowIndex);
+  }, [confirmPurchase]);
+
+  const handleCancelPurchase = useCallback((rowIndex: number) => {
+    cancelPurchase(rowIndex);
+  }, [cancelPurchase]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -60,7 +84,19 @@ export default function App() {
         />
 
         {/* Card Grid */}
-        <CardGrid cards={cards} verifiedCards={verifiedCards} onBuyCard={handleBuyCard} />
+        <CardGrid
+          cards={cards}
+          cardStatuses={cardStatuses}
+          onBuyCard={handleBuyCard}
+        />
+
+        {/* Purchase Modal */}
+        <PurchaseModal
+          preview={purchasePreview}
+          complete={purchaseComplete}
+          onConfirm={handleConfirmPurchase}
+          onCancel={handleCancelPurchase}
+        />
 
         {/* Log Stream */}
         <LogStream logs={logs} />
