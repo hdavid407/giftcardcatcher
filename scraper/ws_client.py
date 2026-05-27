@@ -26,14 +26,31 @@ class ScraperWSClient:
         self._approval_event = asyncio.Event()
         self._denial_event = asyncio.Event()
         self._approved = False
+        self._reconnect_handler: Optional[Callable] = None
+        self._has_connected_before = False
 
         self._register_handlers()
+
+    def set_reconnect_handler(self, handler: Callable):
+        """Set a callback invoked when the client reconnects to the backend.
+
+        The handler receives no arguments. Use it to re-sync state
+        (scrape count, latest cards, scraper status) after a reconnect.
+        """
+        self._reconnect_handler = handler
 
     def _register_handlers(self):
         @self._sio.on("connect")
         def on_connect():
             self._connected = True
             logger.info("Connected to backend at %s", self.config.backend_url)
+            # If we've been connected before, this is a reconnection — re-sync state
+            if self._has_connected_before and self._reconnect_handler:
+                try:
+                    self._reconnect_handler()
+                except Exception as e:
+                    logger.error("Reconnect handler failed: %s", e)
+            self._has_connected_before = True
 
         @self._sio.on("disconnect")
         def on_disconnect():

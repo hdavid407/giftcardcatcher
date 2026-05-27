@@ -75,3 +75,12 @@ def register_routes(app: Flask, store: MatchStore, socketio: SocketIO, config: B
     def get_scraper_status():
         """Get the current scraper state."""
         return store.get_scraper_state()
+
+    @app.route("/api/debug/store")
+    def debug_store():
+        """Debug endpoint to inspect the store state."""
+        return {
+            "scrape_count": store.get_scrape_count(),
+            "cards_count": len(store.get_latest_cards()),
+            "latest_cards": store.get_latest_cards()[:3],  # first 3
+        }

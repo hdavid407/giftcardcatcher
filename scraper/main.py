@@ -121,6 +121,22 @@ async def main():
         on_scrape_count=ws_client.emit_scrape_count if ws_client._connected else None,
     )
 
+    # When the scraper reconnects to the backend (e.g. after a backend restart),
+    # re-sync its current state so frontend clients don't show stale data.
+    async def on_reconnect():
+        # Re-emit scraper state
+        if refresher.is_user_paused:
+            state = "paused"
+        elif refresher.last_refresh is not None:
+            state = "running"
+        else:
+            state = "unknown"
+        await ws_client.emit_scraper_state({"state": state})
+        # Re-emit scrape count
+        if refresher.total_refreshes > 0:
+            await ws_client.emit_scrape_count({"count": refresher.total_refreshes})
+    ws_client.set_reconnect_handler(lambda: asyncio.create_task(on_reconnect()))
+
     # Set up scraper control handler
     def on_control(action: str):
         """Handle pause/resume/restart commands from the frontend."""

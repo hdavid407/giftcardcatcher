@@ -47,6 +47,16 @@ def register_socketio_events(
         state = store.get_scraper_state()
         emit("scraper_state", state)
 
+        # Sync current cards and scrape count to newly connected clients
+        # (scraper may be paused, so broadcasts alone may miss them)
+        latest_cards = store.get_latest_cards()
+        if latest_cards:
+            emit("cards_update", {"cards": latest_cards, "timestamp": 0})
+
+        scrape_count = store.get_scrape_count()
+        if scrape_count > 0:
+            emit("scrape_count", {"count": scrape_count})
+
     @socketio.on("disconnect")
     def on_disconnect():
         logger.info("Socket.IO client disconnected: %s", request.sid)
