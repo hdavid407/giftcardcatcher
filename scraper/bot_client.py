@@ -184,28 +184,17 @@ class BotClient:
             return False
 
         # Poll for listings screen (Refresh button) with retries
-        for attempt in range(5):
+        # Increased from 5s to 15s — bot may need time to apply filter
+        for attempt in range(15):
             await asyncio.sleep(1.0)
             msg = await self.get_latest_message(bot_entity)
             if self._has_button(msg, self.config.refresh_button_text):
-                logger.info("On listings screen after filter selection")
+                logger.info("On listings screen after filter selection (attempt %d)", attempt + 1)
                 return True
 
-        # Try Back to Listings
-        result = await self.click_button_by_text(
-            bot_entity, "Back to Listings", wait=3.0, exact=True
-        )
-        if result is None:
-            result = await self.click_button_by_text(bot_entity, "Back", wait=2.0, exact=True)
-
-        # Final verification
-        msg = await self.get_latest_message(bot_entity)
-        if self._has_button(msg, self.config.refresh_button_text):
-            logger.info("Successfully navigated to GiftCardMall listings")
-            return True
-
-        # Ultimate fallback: filter persists across sessions
-        logger.warning("Navigation stuck — falling back to /start → Listing")
+        # Do NOT try "Back to Listings" / "Back" — that may cancel the filter.
+        # Go straight to the /start → Listing fallback to reset to known state.
+        logger.warning("Refresh button not found after 15s — falling back to /start → Listing")
         await self._client.send_message(bot_entity, "/start")
         await asyncio.sleep(3.0)
         result = await self.click_button_by_text(
