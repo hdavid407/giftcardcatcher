@@ -1,17 +1,21 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   FlatList,
+  TouchableOpacity,
   StyleSheet,
 } from "react-native";
 import { CardInfo } from "../hooks/useSocket";
 
 interface CardGridProps {
   cards: CardInfo[];
+  onBuyCard: (rowIndex: number) => void;
 }
 
-export default function CardGrid({ cards }: CardGridProps) {
+export default function CardGrid({ cards, onBuyCard }: CardGridProps) {
+  const [buyingRow, setBuyingRow] = useState<number | null>(null);
+
   if (cards.length === 0) {
     return (
       <View style={styles.empty}>
@@ -19,6 +23,11 @@ export default function CardGrid({ cards }: CardGridProps) {
       </View>
     );
   }
+
+  const handleBuy = (item: CardInfo) => {
+    setBuyingRow(item.button_row);
+    onBuyCard(item.button_row);
+  };
 
   const renderItem = ({ item }: { item: CardInfo }) => (
     <View style={[styles.row, item.is_match && styles.matchRow]}>
@@ -30,7 +39,24 @@ export default function CardGrid({ cards }: CardGridProps) {
       <Text style={styles.cellDiscount}>
         {item.discount ? `${item.discount}%` : "—"}
       </Text>
-      {item.is_match && <View style={styles.matchBadge}><Text style={styles.matchText}>🎯</Text></View>}
+      <View style={styles.cellBuy}>
+        {item.is_match ? (
+          <TouchableOpacity
+            style={[
+              styles.buyButton,
+              buyingRow === item.button_row && styles.buyButtonDisabled,
+            ]}
+            onPress={() => handleBuy(item)}
+            disabled={buyingRow === item.button_row}
+          >
+            <Text style={styles.buyButtonText}>
+              {buyingRow === item.button_row ? "…" : "💰"}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.cellBuyPlaceholder}>—</Text>
+        )}
+      </View>
     </View>
   );
 
@@ -42,6 +68,7 @@ export default function CardGrid({ cards }: CardGridProps) {
         <Text style={[styles.headerCell, { flex: 1.5 }]}>BIN</Text>
         <Text style={[styles.headerCell, { flex: 1.8 }]}>Amount</Text>
         <Text style={[styles.headerCell, { flex: 0.8 }]}>Disc</Text>
+        <Text style={[styles.headerCell, { flex: 0.7 }]}>Buy</Text>
       </View>
       <FlatList
         data={cards}
@@ -120,11 +147,26 @@ const styles = StyleSheet.create({
     color: "#eab308",
     fontSize: 12,
   },
-  matchBadge: {
-    marginLeft: 4,
+  cellBuy: {
+    flex: 0.7,
+    alignItems: "center",
   },
-  matchText: {
+  buyButton: {
+    backgroundColor: "#22c55e",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  buyButtonDisabled: {
+    backgroundColor: "#4b5563",
+  },
+  buyButtonText: {
+    color: "#fff",
     fontSize: 14,
+  },
+  cellBuyPlaceholder: {
+    color: "#4b5563",
+    fontSize: 12,
   },
   empty: {
     backgroundColor: "#1e293b",

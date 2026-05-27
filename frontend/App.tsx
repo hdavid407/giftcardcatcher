@@ -4,25 +4,16 @@ import { StatusBar } from "expo-status-bar";
 import { useSocket } from "./hooks/useSocket";
 import StatusPanel from "./components/StatusPanel";
 import LogStream from "./components/LogStream";
-import MatchAlert from "./components/MatchAlert";
 import CardGrid from "./components/CardGrid";
 import SettingsPanel from "./components/SettingsPanel";
 
 export default function App() {
-  const { status, match, logs, lastRefresh, cards, scrapeCount, targetAmount, scraperState, sendControl, resetMatch } = useSocket();
+  const { status, logs, lastRefresh, cards, scrapeCount, targetAmount, scraperState, sendControl, sendPurchase } = useSocket();
   const [showSettings, setShowSettings] = useState(false);
 
-  const handleApproved = useCallback(() => {
-    resetMatch();
-  }, [resetMatch]);
-
-  const handleDenied = useCallback(() => {
-    resetMatch();
-  }, [resetMatch]);
-
-  const handleExpired = useCallback(() => {
-    resetMatch();
-  }, [resetMatch]);
+  const handleBuyCard = useCallback((rowIndex: number) => {
+    sendPurchase(rowIndex);
+  }, [sendPurchase]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -69,21 +60,11 @@ export default function App() {
         />
 
         {/* Card Grid */}
-        <CardGrid cards={cards} />
+        <CardGrid cards={cards} onBuyCard={handleBuyCard} />
 
         {/* Log Stream */}
         <LogStream logs={logs} />
       </ScrollView>
-
-      {/* Match Alert Overlay */}
-      {match && (
-        <MatchAlert
-          match={match}
-          onApproved={handleApproved}
-          onDenied={handleDenied}
-          onExpired={handleExpired}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -105,8 +86,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "#f1f5f9",
-    fontSize: 28,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "700",
   },
   subtitle: {
     color: "#64748b",
@@ -114,13 +95,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   settingsToggle: {
-    fontSize: 24,
-    padding: 8,
+    color: "#64748b",
+    fontSize: 22,
+    padding: 4,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 40,
   },
 });
