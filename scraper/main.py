@@ -143,6 +143,8 @@ async def main():
                         await ws_client.emit_scraper_state({"state": "running"})
                     else:
                         await ws_client.emit_scraper_state({"state": "error", "reason": "restart failed"})
+                else:
+                    logger.warning("Backend not connected after restart — state not emitted")
 
             asyncio.create_task(do_restart())
         else:
