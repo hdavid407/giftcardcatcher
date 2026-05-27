@@ -140,6 +140,15 @@ async def main():
     # --- Purchase flow handlers ---
 
     _pending_purchase_row: Optional[int] = None
+    _auto_buy_enabled: bool = False
+
+    async def handle_toggle_auto_buy(enabled: bool):
+        """Handle auto-buy toggle from frontend."""
+        nonlocal _auto_buy_enabled
+        _auto_buy_enabled = enabled
+        logger.info("Auto-buy mode %s", "ENABLED" if enabled else "DISABLED")
+        if ws_client.is_connected:
+            await ws_client.emit_auto_buy_status({"enabled": enabled})
 
     async def handle_initiate_purchase(row_index: int):
         """User clicked Buy — navigate to detail screen and emit preview."""
@@ -358,6 +367,106 @@ async def main():
             _pending_purchase_row = None
             refresher.resume()
 
+    async def run_auto_buy_purchase(bot, match: GiftCardMatch, details: dict):
+        """Auto-buy an unregistered card. Called during verification.
+
+        Clicks Confirm instead of Cancel, waits for result, then disables auto-buy.
+        """
+        nonlocal _auto_buy_enabled
+        logger.info("🤖 AUTO-BUY triggered for card #%d (row %d)", match.card_number, match.row_index)
+
+        # We are already on the detail screen from verification
+        # Click Confirm to purchase
+        clicked = await bot_client.click_confirm(bot)
+        if not clicked:
+            logger.error("Auto-buy: failed to click Confirm for row %d", match.row_index)
+            _auto_buy_enabled = False
+            if ws_client.is_connected:
+                await ws_client.emit_purchase_complete({
+                    "card_number": match.card_number,
+                    "success": False,
+                    "reason": "confirm_click_failed",
+                    "auto_buy": True,
+                })
+                await ws_client.emit_auto_buy_status({"enabled": False, "reason": "confirm_click_failed"})
+            await bot_client.go_back_to_listings(bot)
+            return
+
+        logger.info("Auto-buy: clicked Confirm for row %d, waiting for result...", match.row_index)
+
+        # Wait for and read the purchase result (reuse confirm logic)
+        purchase_success = False
+        result_reason = None
+        result_text = None
+
+        await asyncio.sleep(2.0)
+
+        for attempt in range(15):
+            msg = await bot_client.get_latest_message(bot)
+            if msg and msg.text:
+                text = msg.text
+                text_lower = text.lower()
+
+                if "checking card validity" in text_lower or "please wait" in text_lower:
+                    logger.info("Auto-buy: bot still checking validity... (attempt %d/15)", attempt + 1)
+                    await asyncio.sleep(3.0)
+                    continue
+
+                result_text = text
+                logger.info("Auto-buy: purchase result for row %d: %s", match.row_index, text[:300])
+
+                failure_words = ["failed", "error", "invalid", "insufficient", "not available", "sold", "refunded", "aborted", "cancelled", "declined", "expired"]
+                success_words = ["success", "purchased", "card details", "secret", "pin", "cvv"]
+
+                if any(word in text_lower for word in failure_words):
+                    purchase_success = False
+                    result_reason = "purchase_failed"
+                elif any(word in text_lower for word in success_words):
+                    purchase_success = True
+                    result_reason = None
+                elif any(emoji in text for emoji in ["⚠️", "❌", "🚫", "⛔"]):
+                    purchase_success = False
+                    result_reason = "purchase_failed"
+                else:
+                    has_id = "id:" in text_lower
+                    has_bin = "bin:" in text_lower
+                    has_delivery_keyword = any(w in text_lower for w in ["secret", "pin", "cvv", "code", "password"])
+                    if has_id and has_bin and has_delivery_keyword:
+                        purchase_success = True
+                    else:
+                        purchase_success = False
+                        result_reason = "unknown_result"
+                break
+
+            await asyncio.sleep(3.0)
+        else:
+            logger.warning("Auto-buy: timed out waiting for purchase result for row %d", match.row_index)
+            purchase_success = False
+            result_reason = "timeout"
+
+        # Always disable auto-buy after attempt
+        _auto_buy_enabled = False
+
+        # Return to listings
+        await bot_client.go_back_to_listings(bot)
+
+        # Emit result
+        if ws_client.is_connected:
+            await ws_client.emit_purchase_complete({
+                "card_number": match.card_number,
+                "success": purchase_success,
+                "reason": result_reason,
+                "result_text": result_text[:500] if result_text else None,
+                "auto_buy": True,
+            })
+            await ws_client.emit_auto_buy_status({"enabled": False, "reason": "purchase_completed"})
+            logger.info(
+                "Auto-buy complete for row %d: success=%s reason=%s",
+                match.row_index,
+                purchase_success,
+                result_reason,
+            )
+
     ws_client.set_initiate_purchase_handler(
         lambda row_index: asyncio.create_task(handle_initiate_purchase(row_index))
     )
@@ -367,6 +476,7 @@ async def main():
     ws_client.set_cancel_purchase_handler(
         lambda row_index: asyncio.create_task(handle_cancel_purchase(row_index))
     )
+    ws_client.set_toggle_auto_buy_handler(handle_toggle_auto_buy)
 
     # --- Scraper control handler ---
 
@@ -474,6 +584,18 @@ async def main():
                         "button_row": match.row_index,
                     }
 
+                    # --- AUTO-BUY LOGIC ---
+                    if _auto_buy_enabled and details.get("status") == "unregistered":
+                        logger.info(
+                            "🤖 Auto-buy triggered for unregistered card #%d at row %d",
+                            match.card_number,
+                            match.row_index,
+                        )
+                        # Skip emitting card_status and Cancel — go straight to purchase
+                        await run_auto_buy_purchase(bot, match, details)
+                        return  # Exit verification loop — auto-buy handles everything
+
+                    # --- NORMAL VERIFICATION (no auto-buy or not unregistered) ---
                     status_emoji = {"unregistered": "✅", "registered": "❌", "unknown": "⚠️"}
                     logger.info(
                         "%s Card #%s status: %s (id=%s, bin=%s, balance=%s, price=%s)",
