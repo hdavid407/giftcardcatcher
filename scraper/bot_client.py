@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Optional
 
 from telethon import TelegramClient
@@ -266,10 +267,10 @@ class BotClient:
         logger.warning("Could not find Purchase button at row %d", row_index)
         return False
 
-    async def check_registration(self, bot_entity, row_index: int) -> Optional[bool]:
+    async def check_registration(self, bot_entity, row_index: int) -> Optional[dict]:
         """
-        Click Purchase on a card and check if it's unregistered.
-        Returns True if unregistered, False if registered, None if unknown.
+        Click Purchase on a card, read its details, and return to listings.
+        Returns the details dict, or None on failure.
         Always clicks Cancel and returns to the listings view before returning.
         """
         success = await self.click_purchase(bot_entity, row_index)
@@ -279,28 +280,79 @@ class BotClient:
         # Wait for the detail view to load
         await asyncio.sleep(2.0)
 
-        msg = await self.get_latest_message(bot_entity)
-        if not msg or not msg.text:
-            await self.click_cancel(bot_entity)
-            return None
-
-        text = msg.text.lower()
-        logger.info("Purchase detail text: %s", msg.text[:200])
-
-        result: Optional[bool] = None
-        if "unregistered" in text or "un-register" in text:
-            logger.info("Card is UNREGISTERED")
-            result = True
-        elif "registered" in text:
-            logger.info("Card is REGISTERED")
-            result = False
-        else:
-            logger.warning("Could not determine registration status from text")
-            result = None
+        details = await self.read_card_details(bot_entity)
 
         # Always click Cancel to return to listings
         await self.click_cancel(bot_entity)
-        return result
+        return details
+
+    async def read_card_details(self, bot_entity) -> Optional[dict]:
+        """Read the purchase detail screen and extract structured card details.
+
+        Assumes the bot is already on the detail screen.
+        Returns a dict with keys: id, bin, balance, price, currency, rate, status, raw_text.
+        Returns None if the detail screen cannot be read.
+        """
+        msg = await self.get_latest_message(bot_entity)
+        if not msg or not msg.text:
+            return None
+
+        raw_text = msg.text
+        logger.info("Reading card details from text: %s", raw_text[:200])
+
+        details: dict = {
+            "id": None,
+            "bin": None,
+            "balance": None,
+            "price": None,
+            "currency": "USD",
+            "rate": None,
+            "status": "unknown",
+            "raw_text": raw_text,
+        }
+
+        id_match = re.search(r"ID:\s*(\d+)", raw_text)
+        if id_match:
+            details["id"] = id_match.group(1)
+
+        bin_match = re.search(r"BIN:\s*([\dxX]+)", raw_text)
+        if bin_match:
+            details["bin"] = bin_match.group(1)
+
+        balance_match = re.search(r"Amount:\s*\$?([\d.]+)", raw_text)
+        if balance_match:
+            details["balance"] = balance_match.group(1)
+
+        price_match = re.search(r"Price:\s*\$?([\d.]+)", raw_text)
+        if price_match:
+            details["price"] = price_match.group(1)
+
+        rate_match = re.search(r"[(\s](\d+)%[)\s]", raw_text)
+        if rate_match:
+            details["rate"] = rate_match.group(1)
+
+        text_lower = raw_text.lower()
+        if "unregistered" in text_lower or "un-register" in text_lower:
+            details["status"] = "unregistered"
+        elif "registered" in text_lower:
+            details["status"] = "registered"
+        else:
+            details["status"] = "unknown"
+
+        logger.info("Parsed card details: %s", details)
+        return details
+
+    async def click_confirm(self, bot_entity) -> bool:
+        """Click the ✅ Confirm button on the purchase detail screen."""
+        confirm_texts = ["Confirm", "✅ Confirm", "✔️ Confirm", "Buy"]
+        for text in confirm_texts:
+            result = await self.click_button_by_text(bot_entity, text, wait=1.5)
+            if result is not None:
+                logger.info("Clicked confirm button: '%s'", text)
+                return True
+
+        logger.warning("Could not find Confirm button")
+        return False
 
     async def click_cancel(self, bot_entity) -> bool:
         """Click the Cancel button on the purchase detail screen and return to listings."""
