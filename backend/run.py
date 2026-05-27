@@ -1,8 +1,6 @@
 """Entry point for the Flask backend server."""
 
 import logging
-import signal
-import sys
 
 from .app import create_app
 from .config import BackendConfig
@@ -19,7 +17,7 @@ def main():
     logger.info("Starting Flask backend server")
 
     config = BackendConfig()
-    app, socketio, store, timer, process_manager = create_app(config)
+    app, socketio, store, process_manager = create_app(config)
 
     logger.info("Listening on %s:%d", config.host, config.port)
 
@@ -33,7 +31,6 @@ def main():
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        timer.stop()
         process_manager.stop()
 
 

@@ -48,7 +48,7 @@ def register_socketio_events(
             client_type,
         )
 
-        nonlocal _scraper_sid
+        global _scraper_sid
         if client_type == "scraper":
             _scraper_sid = request.sid
             logger.info("Scraper registered with SID: %s", _scraper_sid)
@@ -69,7 +69,7 @@ def register_socketio_events(
     @socketio.on("disconnect")
     def on_disconnect():
         logger.info("Socket.IO client disconnected: %s", request.sid)
-        nonlocal _scraper_sid
+        global _scraper_sid
         if request.sid == _scraper_sid:
             _scraper_sid = None
             logger.info("Scraper disconnected")
