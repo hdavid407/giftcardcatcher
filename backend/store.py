@@ -13,6 +13,7 @@ class MatchStore:
         self._latest_cards: list[dict] = []
         self._target_amount: float = 50.0
         self._scraper_state: dict = {"state": "unknown"}
+        self._auto_buy_enabled: bool = False
 
     # --- Card / metrics methods ---
 
@@ -60,3 +61,15 @@ class MatchStore:
         """Get the current scraper state."""
         with self._lock:
             return dict(self._scraper_state)
+
+    # --- Auto-buy state methods ---
+
+    def set_auto_buy_enabled(self, enabled: bool):
+        """Update the auto-buy enabled state."""
+        with self._lock:
+            self._auto_buy_enabled = enabled
+
+    def get_auto_buy_enabled(self) -> bool:
+        """Get the current auto-buy enabled state."""
+        with self._lock:
+            return self._auto_buy_enabled
