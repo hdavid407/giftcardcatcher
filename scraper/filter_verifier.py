@@ -27,6 +27,10 @@ class FilterVerifier:
         actual = self.extract_filter(message_text)
         if actual is None:
             logger.warning("Filters line not found in message text")
+            logger.debug(
+                "Full message text (first 500 chars) when Filters line missing:\n%s",
+                message_text[:500],
+            )
             return False
         result = actual.lower() == self.expected_filter.lower()
         if not result:
@@ -34,5 +38,9 @@ class FilterVerifier:
                 "Filter mismatch: expected '%s', got '%s'",
                 self.expected_filter,
                 actual,
+            )
+            logger.debug(
+                "Filter verification failed. Raw message (first 500 chars):\n%s",
+                message_text[:500],
             )
         return result
