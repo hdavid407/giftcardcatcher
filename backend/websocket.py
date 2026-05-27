@@ -17,8 +17,11 @@ def register_socketio_events(
     socketio: SocketIO,
     store: MatchStore,
     config: BackendConfig,
+    process_manager: "ScraperProcessManager" = None,
 ):
     """Register all Socket.IO event handlers."""
+    # Import here to avoid circular import at module level
+    from .process_manager import ScraperProcessManager
 
     @socketio.on("connect")
     def on_connect(auth=None):
@@ -122,6 +125,10 @@ def register_socketio_events(
         logger.info("Scraper control received: %s", action)
         if _scraper_sid:
             emit("scraper_control", data, room=_scraper_sid)
+        elif action == "restart" and process_manager is not None:
+            logger.info("No scraper connected — restarting via process manager")
+            emit("scraper_state", {"state": "starting"})
+            process_manager.restart()
         else:
             logger.warning("No scraper connected — cannot forward control")
             emit("scraper_state", {"state": "error", "reason": "scraper offline"})
