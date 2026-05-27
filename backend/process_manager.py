@@ -1,11 +1,11 @@
 """Manages the scraper as a subprocess of the backend."""
 
-import asyncio
 import logging
 import os
 import signal
 import subprocess
 import sys
+import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class ScraperProcessManager:
 
     The scraper runs ``python -m scraper.main`` from the project root
     directory.  The manager captures its stdout/stderr and forwards them
-    to the Python logger at INFO level.
+    to the Python logger at INFO level using a background daemon thread.
 
     Usage::
 
@@ -60,8 +60,9 @@ class ScraperProcessManager:
             )
             logger.info("Scraper subprocess started (pid=%d)", self._process.pid)
 
-            # Start a background reader task to log scraper output
-            asyncio.create_task(self._reader())
+            # Start a background daemon thread to log scraper output
+            t = threading.Thread(target=self._reader, daemon=True)
+            t.start()
         except Exception as e:
             logger.error("Failed to start scraper subprocess: %s", e)
             self._process = None
@@ -104,17 +105,15 @@ class ScraperProcessManager:
         # Fall back to sys.executable
         return sys.executable
 
-    async def _reader(self):
-        """Continuously read scraper subprocess stdout and log it."""
+    def _reader(self):
+        """Continuously read scraper subprocess stdout and log it (daemon thread)."""
         try:
             while self._process is not None and self._process.poll() is None:
-                line = await asyncio.get_event_loop().run_in_executor(
-                    None, self._process.stdout.readline
-                )
+                line = self._process.stdout.readline()
                 if line:
                     logger.info(
                         "[scraper] %s",
                         line.decode("utf-8", errors="replace").rstrip(),
-                    )
+                )
         except Exception:
             pass

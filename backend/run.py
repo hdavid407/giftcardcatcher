@@ -21,9 +21,6 @@ def main():
     config = BackendConfig()
     app, socketio, store, timer, process_manager = create_app(config)
 
-    # Auto-start the scraper subprocess on backend boot
-    process_manager.start()
-
     logger.info("Listening on %s:%d", config.host, config.port)
 
     try:
