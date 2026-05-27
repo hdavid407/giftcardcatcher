@@ -476,7 +476,9 @@ async def main():
     ws_client.set_cancel_purchase_handler(
         lambda row_index: asyncio.create_task(handle_cancel_purchase(row_index))
     )
-    ws_client.set_toggle_auto_buy_handler(handle_toggle_auto_buy)
+    ws_client.set_toggle_auto_buy_handler(
+        lambda enabled: asyncio.create_task(handle_toggle_auto_buy(enabled))
+    )
 
     # --- Scraper control handler ---
 
