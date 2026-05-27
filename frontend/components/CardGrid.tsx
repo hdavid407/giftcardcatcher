@@ -10,10 +10,11 @@ import { CardInfo } from "../hooks/useSocket";
 
 interface CardGridProps {
   cards: CardInfo[];
+  verifiedCards: Set<number>;
   onBuyCard: (rowIndex: number) => void;
 }
 
-export default function CardGrid({ cards, onBuyCard }: CardGridProps) {
+export default function CardGrid({ cards, verifiedCards, onBuyCard }: CardGridProps) {
   const [buyingRow, setBuyingRow] = useState<number | null>(null);
 
   if (cards.length === 0) {
@@ -40,7 +41,7 @@ export default function CardGrid({ cards, onBuyCard }: CardGridProps) {
         {item.discount ? `${item.discount}%` : "—"}
       </Text>
       <View style={styles.cellBuy}>
-        {item.is_match ? (
+        {item.is_match && verifiedCards.has(item.card_number) ? (
           <TouchableOpacity
             style={[
               styles.buyButton,
@@ -53,6 +54,8 @@ export default function CardGrid({ cards, onBuyCard }: CardGridProps) {
               {buyingRow === item.button_row ? "…" : "💰"}
             </Text>
           </TouchableOpacity>
+        ) : item.is_match ? (
+          <Text style={styles.cellBuyPlaceholder}>⏳</Text>
         ) : (
           <Text style={styles.cellBuyPlaceholder}>—</Text>
         )}

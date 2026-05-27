@@ -23,6 +23,7 @@ class Refresher:
         self._total_refreshes = 0
         self._on_cards_update: Optional[Callable] = None
         self._on_scrape_count: Optional[Callable] = None
+        self._on_verified_match: Optional[Callable] = None
 
     @property
     def last_refresh(self) -> Optional[float]:
@@ -36,10 +37,12 @@ class Refresher:
         self,
         on_cards_update: Optional[Callable] = None,
         on_scrape_count: Optional[Callable] = None,
+        on_verified_match: Optional[Callable] = None,
     ):
         """Set callbacks for emitting events to the backend."""
         self._on_cards_update = on_cards_update
         self._on_scrape_count = on_scrape_count
+        self._on_verified_match = on_verified_match
 
     def pause(self, duration_seconds: float):
         """Pause refreshing for a given duration (e.g. during a pending match)."""
@@ -125,6 +128,14 @@ class Refresher:
                 await self._on_cards_update(cards_data)
             except Exception as e:
                 logger.error("Failed to emit cards update: %s", e)
+
+    async def emit_verified_match(self, card_data: dict):
+        """Emit a verified unregistered match to the backend."""
+        if self._on_verified_match:
+            try:
+                await self._on_verified_match(card_data)
+            except Exception as e:
+                logger.error("Failed to emit verified match: %s", e)
 
     async def poll_loop(self, on_text: callable):
         """Continuously poll the bot, calling on_text with each message."""

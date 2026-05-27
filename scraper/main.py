@@ -120,6 +120,7 @@ async def main():
     refresher.set_callbacks(
         on_cards_update=ws_client.emit_cards_update if ws_client.is_connected else None,
         on_scrape_count=ws_client.emit_scrape_count if ws_client.is_connected else None,
+        on_verified_match=ws_client.emit_verified_match if ws_client.is_connected else None,
     )
 
     # When the scraper reconnects to the backend, re-sync state
@@ -218,6 +219,56 @@ async def main():
                     match.card_text,
                     match.row_index,
                 )
+
+            # Pause refresher and verify each match sequentially
+            refresher.pause(60)
+            if ws_client.is_connected:
+                await ws_client.emit_scraper_state({"state": "verifying"})
+
+            try:
+                bot = await bot_client.get_bot_entity()
+                for match in matches:
+                    logger.info(
+                        "🔍 Verifying registration for card at row %d...",
+                        match.row_index,
+                    )
+                    is_unregistered = await bot_client.check_registration(
+                        bot, match.row_index
+                    )
+                    if is_unregistered is True:
+                        logger.info(
+                            "✅ VERIFIED UNREGISTERED: row %d",
+                            match.row_index,
+                        )
+                        # Build card data from the match
+                        card_data = {
+                            "card_number": match.card_number,
+                            "bin": "unknown",
+                            "amount": matcher.target_amount,
+                            "currency": "USD",
+                            "discount": None,
+                            "button_row": match.row_index,
+                            "is_match": True,
+                            "raw_text": match.card_text,
+                        }
+                        if ws_client.is_connected:
+                            await ws_client.emit_verified_match(card_data)
+                    elif is_unregistered is False:
+                        logger.info(
+                            "❌ REGISTERED — skipping row %d",
+                            match.row_index,
+                        )
+                    else:
+                        logger.warning(
+                            "⚠️ Could not determine registration for row %d",
+                            match.row_index,
+                        )
+            except Exception as e:
+                logger.error("Verification failed: %s", e)
+            finally:
+                refresher.resume()
+                if ws_client.is_connected:
+                    await ws_client.emit_scraper_state({"state": "running"})
 
     # Start the polling loop
     logger.info("Starting poll loop for bot: %s", config.target_bot)

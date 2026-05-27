@@ -128,6 +128,11 @@ def register_socketio_events(
         """Relay target amount changes."""
         emit("target_amount_changed", data, broadcast=True)
 
+    @socketio.on("verified_match")
+    def on_verified_match(data: dict):
+        """Receive verified unregistered match from scraper and broadcast."""
+        emit("verified_match", data, broadcast=True)
+
     @socketio.on("scraper_control")
     def on_scraper_control(data: dict):
         """Relay scraper control commands to the scraper."""

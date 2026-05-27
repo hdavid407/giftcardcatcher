@@ -270,6 +270,7 @@ class BotClient:
         """
         Click Purchase on a card and check if it's unregistered.
         Returns True if unregistered, False if registered, None if unknown.
+        Always clicks Cancel and returns to the listings view before returning.
         """
         success = await self.click_purchase(bot_entity, row_index)
         if not success:
@@ -280,22 +281,39 @@ class BotClient:
 
         msg = await self.get_latest_message(bot_entity)
         if not msg or not msg.text:
+            await self.click_cancel(bot_entity)
             return None
 
         text = msg.text.lower()
         logger.info("Purchase detail text: %s", msg.text[:200])
 
-        # Check for registration status keywords
+        result: Optional[bool] = None
         if "unregistered" in text or "un-register" in text:
             logger.info("Card is UNREGISTERED")
-            return True
+            result = True
         elif "registered" in text:
             logger.info("Card is REGISTERED")
-            return False
+            result = False
+        else:
+            logger.warning("Could not determine registration status from text")
+            result = None
 
-        # If we can't determine, try to go back and return unknown
-        logger.warning("Could not determine registration status from text")
-        return None
+        # Always click Cancel to return to listings
+        await self.click_cancel(bot_entity)
+        return result
+
+    async def click_cancel(self, bot_entity) -> bool:
+        """Click the Cancel button on the purchase detail screen and return to listings."""
+        cancel_texts = ["Cancel", "❌ Cancel", "✖️ Cancel", "Close"]
+        for text in cancel_texts:
+            result = await self.click_button_by_text(bot_entity, text, wait=1.5)
+            if result is not None:
+                logger.info("Clicked cancel button: '%s'", text)
+                return True
+
+        # Fallback: try Back
+        back_ok = await self.go_back_to_listings(bot_entity)
+        return back_ok
 
     async def go_back_to_listings(self, bot_entity) -> bool:
         """Click the Back button to return to the listings view."""

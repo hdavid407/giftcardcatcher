@@ -114,6 +114,11 @@ class ScraperWSClient:
         """Emit the total scrape count."""
         await self._sio.emit("scrape_count", {"count": count})
 
+    async def emit_verified_match(self, card_data: dict):
+        """Emit a verified unregistered match to the backend."""
+        await self._sio.emit("verified_match", card_data)
+        logger.info("Emitted verified_match for card #%s", card_data.get("card_number"))
+
     def set_target_amount_handler(self, handler: Callable[[float], None]):
         """Set a callback for when the target amount changes."""
 

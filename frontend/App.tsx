@@ -8,7 +8,7 @@ import CardGrid from "./components/CardGrid";
 import SettingsPanel from "./components/SettingsPanel";
 
 export default function App() {
-  const { status, logs, lastRefresh, cards, scrapeCount, targetAmount, scraperState, sendControl, sendPurchase } = useSocket();
+  const { status, logs, lastRefresh, cards, verifiedCards, scrapeCount, targetAmount, scraperState, sendControl, sendPurchase } = useSocket();
   const [showSettings, setShowSettings] = useState(false);
 
   const handleBuyCard = useCallback((rowIndex: number) => {
@@ -60,7 +60,7 @@ export default function App() {
         />
 
         {/* Card Grid */}
-        <CardGrid cards={cards} onBuyCard={handleBuyCard} />
+        <CardGrid cards={cards} verifiedCards={verifiedCards} onBuyCard={handleBuyCard} />
 
         {/* Log Stream */}
         <LogStream logs={logs} />

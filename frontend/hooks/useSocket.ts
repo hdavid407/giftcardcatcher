@@ -24,6 +24,7 @@ interface UseSocketReturn {
   logs: string[];
   lastRefresh: string | null;
   cards: CardInfo[];
+  verifiedCards: Set<number>;
   scrapeCount: number;
   targetAmount: number;
   scraperState: ScraperState;
@@ -40,6 +41,7 @@ export function useSocket(): UseSocketReturn {
   const [scrapeCount, setScrapeCount] = useState<number>(0);
   const [targetAmount, setTargetAmount] = useState<number>(50);
   const [scraperState, setScraperState] = useState<ScraperState>("unknown");
+  const [verifiedCards, setVerifiedCards] = useState<Set<number>>(new Set());
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -78,7 +80,23 @@ export function useSocket(): UseSocketReturn {
 
     socket.on("cards_update", (data: { cards: CardInfo[]; timestamp: number }) => {
       setCards(data.cards);
+      // Prune verified cards that are no longer in the listing
+      setVerifiedCards((prev) => {
+        const currentNumbers = new Set(data.cards.map((c) => c.card_number));
+        const next = new Set<number>();
+        for (const num of prev) {
+          if (currentNumbers.has(num)) {
+            next.add(num);
+          }
+        }
+        return next;
+      });
       addLog(`📋 Cards updated: ${data.cards.length} cards`);
+    });
+
+    socket.on("verified_match", (data: CardInfo) => {
+      setVerifiedCards((prev) => new Set(prev).add(data.card_number));
+      addLog(`✅ Verified unregistered: card #${data.card_number}`);
     });
 
     socket.on("scrape_count", (data: { count: number }) => {
@@ -128,6 +146,7 @@ export function useSocket(): UseSocketReturn {
     logs,
     lastRefresh,
     cards,
+    verifiedCards,
     scrapeCount,
     targetAmount,
     scraperState,
