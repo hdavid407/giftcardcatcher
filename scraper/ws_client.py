@@ -127,6 +127,11 @@ class ScraperWSClient:
             result.get("success"),
         )
 
+    async def emit_auto_buy_status(self, data: dict):
+        """Emit auto-buy status change to the backend."""
+        await self._sio.emit("auto_buy_status", data)
+        logger.info("Emitted auto_buy_status: %s", data)
+
     def set_target_amount_handler(self, handler: Callable[[float], None]):
         """Set a callback for when the target amount changes."""
 
@@ -183,3 +188,18 @@ class ScraperWSClient:
                 handler(row_index)
             except Exception as e:
                 logger.error("Handler failed for row %d: %s", row_index, e)
+
+    def set_toggle_auto_buy_handler(self, handler: Callable[[bool], None]):
+        """Set a callback for toggle_auto_buy events from the backend.
+
+        handler(enabled: bool) — called when the user toggles auto-buy.
+        """
+
+        @self._sio.on("toggle_auto_buy")
+        def on_toggle_auto_buy(data: dict):
+            enabled = data.get("enabled", False)
+            logger.info("Received toggle_auto_buy: %s", enabled)
+            try:
+                handler(enabled)
+            except Exception as e:
+                logger.error("Toggle auto-buy handler failed: %s", e)
