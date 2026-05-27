@@ -138,32 +138,37 @@ async def main():
     # --- Purchase handler (new) ---
 
     async def handle_purchase(row_index: int):
-        """Execute a purchase immediately when the user clicks Buy."""
-        logger.info("Executing purchase for row %d", row_index)
+        """Handle a purchase request from the frontend.
+
+        NOTE: Purchase execution is currently disabled. The bot logs the
+        request but does not click any buttons. Re-enable by uncommenting
+        the purchaser.purchase() call below.
+        """
+        logger.info("Purchase REQUESTED for row %d (disabled — no action taken)", row_index)
 
         # Reconstruct a minimal GiftCardMatch for the purchaser
-        match = GiftCardMatch(
-            row_index=row_index,
-            card_number=None,
-            card_text=f"row {row_index}",
-            price=None,
-            raw_message="",
-        )
+        # match = GiftCardMatch(
+        #     row_index=row_index,
+        #     card_number=None,
+        #     card_text=f"row {row_index}",
+        #     price=None,
+        #     raw_message="",
+        # )
 
-        try:
-            success = await purchaser.purchase(match)
-            if success:
-                logger.info("Purchase at row %d completed successfully", row_index)
-            else:
-                logger.error("Purchase at row %d failed", row_index)
-        except Exception as e:
-            logger.error("Purchase at row %d failed with exception: %s", row_index, e)
-        finally:
-            # Always try to go back to listings
-            try:
-                await bot_client.go_back_to_listings(bot_entity)
-            except Exception as e:
-                logger.error("Failed to return to listings after purchase: %s", e)
+        # try:
+        #     success = await purchaser.purchase(match)
+        #     if success:
+        #         logger.info("Purchase at row %d completed successfully", row_index)
+        #     else:
+        #         logger.error("Purchase at row %d failed", row_index)
+        # except Exception as e:
+        #     logger.error("Purchase at row %d failed with exception: %s", row_index, e)
+        # finally:
+        #     # Always try to go back to listings
+        #     try:
+        #         await bot_client.go_back_to_listings(bot_entity)
+        #     except Exception as e:
+        #         logger.error("Failed to return to listings after purchase: %s", e)
 
     ws_client.set_purchase_handler(lambda row_index: asyncio.create_task(handle_purchase(row_index)))
 
