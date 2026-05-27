@@ -19,7 +19,7 @@ class FilterVerifier:
         Strips backtick characters that Telegram uses for markdown formatting."""
         match = self.FILTER_PATTERN.search(message_text)
         if match:
-            return match.group(1).strip("`'\"")
+            return match.group(1).strip("`'\".,;:!?")
         return None
 
     def is_correct_filter(self, message_text: str) -> bool:
