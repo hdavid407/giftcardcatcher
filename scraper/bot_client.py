@@ -51,12 +51,19 @@ class BotClient:
             await self.start()
             bot_entity = await self.get_bot_entity()
             nav_ok = await self.navigate_to_listings(bot_entity)
-            if nav_ok:
-                logger.info("Telegram client restarted and navigated successfully")
-                return True
-            else:
+            if not nav_ok:
                 logger.error("Restarted but navigation to listings failed")
                 return False
+
+            # Also verify the GiftCardMall filter is active
+            if self.config.filter_verification_enabled:
+                filter_ok = await self.verify_filter(bot_entity)
+                if not filter_ok:
+                    logger.error("Restarted but filter verification failed")
+                    return False
+
+            logger.info("Telegram client restarted, navigated, and filter verified")
+            return True
         except Exception as e:
             logger.error("Failed to restart Telegram client: %s", e)
             return False
