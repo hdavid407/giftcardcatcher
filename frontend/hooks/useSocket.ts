@@ -63,10 +63,12 @@ interface UseSocketReturn {
   scrapeCount: number;
   targetAmount: number;
   scraperState: ScraperState;
+  autoBuyEnabled: boolean;
   sendControl: (action: "pause" | "resume" | "restart") => void;
   initiatePurchase: (rowIndex: number) => void;
   confirmPurchase: (rowIndex: number) => void;
   cancelPurchase: (rowIndex: number) => void;
+  toggleAutoBuy: (enabled: boolean) => void;
 }
 
 export function useSocket(): UseSocketReturn {
@@ -81,6 +83,7 @@ export function useSocket(): UseSocketReturn {
   const [cardStatuses, setCardStatuses] = useState<Map<number, CardStatus>>(new Map());
   const [purchasePreview, setPurchasePreview] = useState<PurchasePreview | null>(null);
   const [purchaseComplete, setPurchaseComplete] = useState<PurchaseComplete | null>(null);
+  const [autoBuyEnabled, setAutoBuyEnabled] = useState<boolean>(false);
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -177,6 +180,13 @@ export function useSocket(): UseSocketReturn {
       addLog(`❌ Purchase failed for row ${data.row_index}: ${data.reason}`);
     });
 
+    socket.on("auto_buy_status", (data: { enabled: boolean; reason?: string }) => {
+      setAutoBuyEnabled(data.enabled);
+      const emoji = data.enabled ? "🤖" : "🚫";
+      const reasonText = data.reason ? ` (${data.reason})` : "";
+      addLog(`${emoji} Auto-buy ${data.enabled ? "enabled" : "disabled"}${reasonText}`);
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -215,6 +225,13 @@ export function useSocket(): UseSocketReturn {
     }
   }, []);
 
+  const toggleAutoBuy = useCallback((enabled: boolean) => {
+    if (socketRef.current) {
+      socketRef.current.emit("toggle_auto_buy", { enabled });
+      addLog(`${enabled ? "🤖" : "🚫"} Auto-buy toggle requested: ${enabled ? "ON" : "OFF"}`);
+    }
+  }, [addLog]);
+
   return {
     status,
     logs,
@@ -226,9 +243,11 @@ export function useSocket(): UseSocketReturn {
     scrapeCount,
     targetAmount,
     scraperState,
+    autoBuyEnabled,
     sendControl,
     initiatePurchase,
     confirmPurchase,
     cancelPurchase,
+    toggleAutoBuy,
   };
 }
