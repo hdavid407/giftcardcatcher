@@ -7,6 +7,7 @@ from flask import request
 from flask_socketio import SocketIO, emit
 
 from .config import BackendConfig
+from .discord_notifier import notify_auto_buy_result
 from .store import MatchStore
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,13 @@ def register_socketio_events(
         store.set_scraper_state(state, reason)
         emit("scraper_state", data, broadcast=True)
 
+    @socketio.on("auto_buy_status")
+    def on_auto_buy_status(data: dict):
+        """Receive auto-buy status from scraper, update store, and broadcast."""
+        enabled = data.get("enabled", False)
+        store.set_auto_buy_enabled(enabled)
+        emit("auto_buy_status", data, broadcast=True)
+
     @socketio.on("status_update")
     def on_status_update(data: dict):
         """Receive status updates from scraper and broadcast."""
@@ -181,10 +189,34 @@ def register_socketio_events(
         else:
             logger.warning("Scraper not connected — cannot relay cancel_purchase")
 
+    @socketio.on("toggle_auto_buy")
+    def on_toggle_auto_buy(data: dict):
+        """Relay toggle_auto_buy from frontend to scraper and store state."""
+        enabled = data.get("enabled", False)
+        store.set_auto_buy_enabled(enabled)
+        logger.info("Auto-buy toggled: %s", enabled)
+
+        if _scraper_sid:
+            emit("toggle_auto_buy", {"enabled": enabled}, room=_scraper_sid)
+            logger.info("Relayed toggle_auto_buy to scraper: %s", enabled)
+        else:
+            logger.warning("Scraper not connected — cannot relay toggle_auto_buy")
+            # Still broadcast to frontends so UI stays in sync
+            emit("auto_buy_status", {"enabled": False, "reason": "scraper_disconnected"}, broadcast=True)
+
     @socketio.on("purchase_complete")
     def on_purchase_complete(data: dict):
         """Receive purchase complete from scraper and broadcast."""
         emit("purchase_complete", data, broadcast=True)
+
+        # Send Discord notification if this was an auto-buy purchase
+        if data.get("auto_buy") and config.discord_bot_token and config.discord_user_id:
+            socketio.start_background_task(
+                notify_auto_buy_result,
+                config.discord_bot_token,
+                config.discord_user_id,
+                data,
+            )
 
     @socketio.on("scraper_control")
     def on_scraper_control(data: dict):

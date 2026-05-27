@@ -99,6 +99,78 @@ class DiscordNotifier:
         embed.set_footer(text="Telegram Gift Card Buyer")
         return embed
 
+    async def send_auto_buy_notification(self, result: dict) -> bool:
+        """Send a Discord DM embed for auto-buy result."""
+        intents = discord.Intents.default()
+        client = discord.Client(intents=intents)
+        sent = False
+
+        @client.event
+        async def on_ready():
+            nonlocal sent
+            try:
+                user = await client.fetch_user(self.user_id)
+                if user is None:
+                    logger.warning("Discord user %s not found", self.user_id)
+                    await client.close()
+                    return
+
+                dm_channel = await user.create_dm()
+                embed = self._build_auto_buy_embed(result)
+                await dm_channel.send(embed=embed)
+                logger.info("Discord auto-buy notification sent to user %s", self.user_id)
+                sent = True
+            except discord.Forbidden:
+                logger.warning("Cannot send DM to Discord user %s (DMs disabled)", self.user_id)
+            except discord.HTTPException as e:
+                logger.warning("Discord HTTP error sending auto-buy notification: %s", e)
+            except Exception as e:
+                logger.warning("Unexpected error sending auto-buy notification: %s", e)
+            finally:
+                await client.close()
+
+        try:
+            await client.start(self.bot_token)
+        except discord.LoginFailure:
+            logger.error("Discord bot token is invalid")
+            await client.close()
+            return False
+        except Exception as e:
+            logger.warning("Discord client error: %s", e)
+            await client.close()
+            return False
+
+        return sent
+
+    def _build_auto_buy_embed(self, result: dict) -> discord.Embed:
+        """Build a rich embed for the auto-buy result notification."""
+        success = result.get("success", False)
+        card_number = result.get("card_number", "N/A")
+        reason = result.get("reason", "")
+        result_text = result.get("result_text", "")
+
+        if success:
+            title = "✅ Auto-Buy Successful!"
+            color = 0x00FF00
+            description = f"Card #{card_number} was automatically purchased."
+        else:
+            title = "❌ Auto-Buy Failed"
+            color = 0xFF0000
+            description = f"Card #{card_number} auto-buy failed: {reason}"
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        if result_text:
+            embed.add_field(name="Result", value=f"```{result_text[:1000]}```", inline=False)
+
+        embed.set_footer(text="Telegram Gift Card Buyer — Auto-Buy Mode")
+        return embed
+
 
 async def notify_match(bot_token: Optional[str], user_id: Optional[int], match_data: dict) -> bool:
     """
@@ -112,3 +184,13 @@ async def notify_match(bot_token: Optional[str], user_id: Optional[int], match_d
 
     notifier = DiscordNotifier(bot_token, user_id)
     return await notifier.send_match_notification(match_data)
+
+
+async def notify_auto_buy_result(bot_token: Optional[str], user_id: Optional[int], result: dict) -> bool:
+    """Convenience function: send a Discord DM for auto-buy result if config is present."""
+    if not bot_token or not user_id:
+        logger.debug("Discord auto-buy notification skipped: missing token or user_id")
+        return False
+
+    notifier = DiscordNotifier(bot_token, user_id)
+    return await notifier.send_auto_buy_notification(result)
