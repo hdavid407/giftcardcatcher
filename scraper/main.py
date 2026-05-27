@@ -1,6 +1,7 @@
 """Telegram Gift Card Scraper — Entry point.
 
-Orchestrates: connect Telethon → poll bot → parse cards → match → notify → wait for approval → purchase.
+Orchestrates: connect Telethon → poll bot → parse cards → emit metrics.
+Purchase commands arrive via WebSocket and execute immediately.
 """
 
 import asyncio
@@ -11,7 +12,7 @@ import sys
 from .bot_client import BotClient
 from .config import ScraperConfig
 from .filter_verifier import FilterVerifier
-from .matcher import Matcher
+from .matcher import Matcher, GiftCardMatch
 from .purchaser import Purchaser
 from .refresher import Refresher
 from .ws_client import ScraperWSClient
@@ -94,7 +95,7 @@ async def main():
                     "reason": "filter_verification_failed",
                 })
             except Exception:
-                pass  # Backend not connected — error already logged
+                pass
             await bot_client.stop()
             sys.exit(1)
     else:
@@ -117,44 +118,74 @@ async def main():
 
     # Set up refresher callbacks for metrics
     refresher.set_callbacks(
-        on_cards_update=ws_client.emit_cards_update if ws_client._connected else None,
-        on_scrape_count=ws_client.emit_scrape_count if ws_client._connected else None,
+        on_cards_update=ws_client.emit_cards_update if ws_client.is_connected else None,
+        on_scrape_count=ws_client.emit_scrape_count if ws_client.is_connected else None,
     )
 
-    # When the scraper reconnects to the backend (e.g. after a backend restart),
-    # re-sync its current state so frontend clients don't show stale data.
+    # When the scraper reconnects to the backend, re-sync state
     async def on_reconnect():
-        # Re-emit scraper state
-        if refresher.is_user_paused:
+        if refresher.is_user_paused():
             state = "paused"
         elif refresher.last_refresh is not None:
             state = "running"
         else:
             state = "unknown"
         await ws_client.emit_scraper_state({"state": state})
-        # Re-emit scrape count
         if refresher.total_refreshes > 0:
             await ws_client.emit_scrape_count({"count": refresher.total_refreshes})
     ws_client.set_reconnect_handler(lambda: asyncio.create_task(on_reconnect()))
 
-    # Set up scraper control handler
+    # --- Purchase handler (new) ---
+
+    async def handle_purchase(row_index: int):
+        """Execute a purchase immediately when the user clicks Buy."""
+        logger.info("Executing purchase for row %d", row_index)
+
+        # Reconstruct a minimal GiftCardMatch for the purchaser
+        match = GiftCardMatch(
+            row_index=row_index,
+            card_number=None,
+            card_text=f"row {row_index}",
+            price=None,
+            raw_message="",
+        )
+
+        try:
+            success = await purchaser.purchase(match)
+            if success:
+                logger.info("Purchase at row %d completed successfully", row_index)
+            else:
+                logger.error("Purchase at row %d failed", row_index)
+        except Exception as e:
+            logger.error("Purchase at row %d failed with exception: %s", row_index, e)
+        finally:
+            # Always try to go back to listings
+            try:
+                await bot_client.go_back_to_listings(bot_entity)
+            except Exception as e:
+                logger.error("Failed to return to listings after purchase: %s", e)
+
+    ws_client.set_purchase_handler(lambda row_index: asyncio.create_task(handle_purchase(row_index)))
+
+    # --- Scraper control handler ---
+
     def on_control(action: str):
         """Handle pause/resume/restart commands from the frontend."""
         if action == "pause":
             refresher.pause_user()
-            if ws_client._connected:
+            if ws_client.is_connected:
                 asyncio.create_task(ws_client.emit_scraper_state({"state": "paused"}))
         elif action == "resume":
             refresher.resume_user()
-            if ws_client._connected:
+            if ws_client.is_connected:
                 asyncio.create_task(ws_client.emit_scraper_state({"state": "running"}))
         elif action == "restart":
-            if ws_client._connected:
+            if ws_client.is_connected:
                 asyncio.create_task(ws_client.emit_scraper_state({"state": "restarting"}))
 
             async def do_restart():
                 ok = await bot_client.restart()
-                if ws_client._connected:
+                if ws_client.is_connected:
                     if ok:
                         await ws_client.emit_scraper_state({"state": "running"})
                     else:
@@ -169,80 +200,19 @@ async def main():
     ws_client.set_control_handler(on_control)
 
     async def on_refresh_text(text: str):
-        """Called on each successful refresh. Parse and act on matches."""
-        nonlocal matcher, refresher, ws_client, purchaser, config, bot_entity, bot_client
-
-        # Parse ALL cards and emit metrics
+        """Called on each successful refresh. Parse and emit card metrics."""
         all_cards = matcher.parse_all_cards(text)
         await refresher.emit_scrape_metrics(all_cards)
 
         matches = matcher.find_matches(text)
-        if not matches:
-            return
-
-        for match in matches:
-            logger.info(
-                "🎯 $%.2f CARD DETECTED: %s (row %d)",
-                matcher.target_amount,
-                match.card_text,
-                match.row_index,
-            )
-
-            # Step 1: Click Purchase to check registration status
-            logger.info("Checking registration status by clicking Purchase...")
-            is_unregistered = await bot_client.check_registration(
-                bot_entity, match.row_index
-            )
-
-            if is_unregistered is False:
-                # Card is registered — not our target
-                logger.info("Card is REGISTERED — skipping")
-                await bot_client.go_back_to_listings(bot_entity)
-                continue
-
-            if is_unregistered is None:
-                # Could not determine status — alert user anyway for manual check
-                logger.warning("Could not determine registration — alerting user for manual verification")
-
-            # Card is unregistered (or status unknown) — this is our target!
-            logger.info(
-                "✅ UNREGISTERED $%.2f CARD CONFIRMED: %s",
-                matcher.target_amount,
-                match.card_text,
-            )
-
-            # Notify backend
-            if ws_client._connected:
-                await ws_client.emit_match(match)
-            else:
-                logger.info("Backend offline — logged match only")
-
-            # Pause refresher while waiting for approval
-            refresher.pause(config.match_timeout + 10)
-
-            # Wait for user decision or timeout
-            if ws_client._connected:
-                decision = await ws_client.wait_for_approval(config.match_timeout)
-            else:
-                # No backend — auto-deny after timeout
-                logger.info("No backend — skipping purchase for %s", match.card_text)
-                decision = False
-
-            if decision is True:
-                logger.info("User APPROVED purchase for %s", match.card_text)
-                success = await purchaser.purchase(match)
-                if success:
-                    logger.info("Purchase executed successfully!")
-                else:
-                    logger.error("Purchase failed!")
-            elif decision is False:
-                logger.info("User DENIED purchase for %s", match.card_text)
-            else:
-                logger.info("Match expired — no action taken for %s", match.card_text)
-
-            # Go back to listings and resume polling
-            await bot_client.go_back_to_listings(bot_entity)
-            refresher.resume()
+        if matches:
+            for match in matches:
+                logger.info(
+                    "🎯 $%.2f CARD DETECTED: %s (row %d)",
+                    matcher.target_amount,
+                    match.card_text,
+                    match.row_index,
+                )
 
     # Start the polling loop
     logger.info("Starting poll loop for bot: %s", config.target_bot)
