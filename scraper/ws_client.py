@@ -70,21 +70,6 @@ class ScraperWSClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def set_purchase_handler(self, handler: Callable[[int], None]):
-        """Set a callback for purchase_card events from the backend.
-
-        handler(row_index: int) — called when the user clicks Buy on a card.
-        """
-
-        @self._sio.on("purchase_card")
-        def on_purchase_card(data: dict):
-            row_index = data.get("row_index")
-            if row_index is None:
-                logger.warning("purchase_card received without row_index")
-                return
-            logger.info("Received purchase_card for row %d", row_index)
-            handler(row_index)
-
     def set_control_handler(self, handler: Callable[[str], None]):
         """Set a callback for scraper_control events from the backend.
 
@@ -114,10 +99,31 @@ class ScraperWSClient:
         """Emit the total scrape count."""
         await self._sio.emit("scrape_count", {"count": count})
 
-    async def emit_verified_match(self, card_data: dict):
-        """Emit a verified unregistered match to the backend."""
-        await self._sio.emit("verified_match", card_data)
-        logger.info("Emitted verified_match for card #%s", card_data.get("card_number"))
+    async def emit_card_status(self, card_data: dict):
+        """Emit card status (auto-verification result) to the backend."""
+        await self._sio.emit("card_status", card_data)
+        logger.info(
+            "Emitted card_status for card #%s (%s)",
+            card_data.get("card_number"),
+            card_data.get("status"),
+        )
+
+    async def emit_purchase_preview(self, card_data: dict):
+        """Emit purchase preview (detail screen data) to the backend."""
+        await self._sio.emit("purchase_preview", card_data)
+        logger.info(
+            "Emitted purchase_preview for card #%s",
+            card_data.get("card_number"),
+        )
+
+    async def emit_purchase_complete(self, result: dict):
+        """Emit purchase completion result to the backend."""
+        await self._sio.emit("purchase_complete", result)
+        logger.info(
+            "Emitted purchase_complete for card #%s: success=%s",
+            result.get("card_number"),
+            result.get("success"),
+        )
 
     def set_target_amount_handler(self, handler: Callable[[float], None]):
         """Set a callback for when the target amount changes."""
@@ -127,3 +133,42 @@ class ScraperWSClient:
             amount = data.get("amount", 50.0)
             logger.info("Received target amount change: %.2f", amount)
             handler(amount)
+
+    def set_initiate_purchase_handler(self, handler: Callable[[int], None]):
+        """Set a callback for initiate_purchase events from the backend.
+
+        handler(row_index: int) — called when the user clicks Buy on a card.
+        """
+
+        @self._sio.on("initiate_purchase")
+        def on_initiate_purchase(data: dict):
+            row_index = data.get("row_index")
+            if row_index is None:
+                logger.warning("initiate_purchase received without row_index")
+                return
+            logger.info("Received initiate_purchase for row %d", row_index)
+            handler(row_index)
+
+    def set_confirm_purchase_handler(self, handler: Callable[[int], None]):
+        """Set a callback for confirm_purchase events from the backend."""
+
+        @self._sio.on("confirm_purchase")
+        def on_confirm_purchase(data: dict):
+            row_index = data.get("row_index")
+            if row_index is None:
+                logger.warning("confirm_purchase received without row_index")
+                return
+            logger.info("Received confirm_purchase for row %d", row_index)
+            handler(row_index)
+
+    def set_cancel_purchase_handler(self, handler: Callable[[int], None]):
+        """Set a callback for cancel_purchase events from the backend."""
+
+        @self._sio.on("cancel_purchase")
+        def on_cancel_purchase(data: dict):
+            row_index = data.get("row_index")
+            if row_index is None:
+                logger.warning("cancel_purchase received without row_index")
+                return
+            logger.info("Received cancel_purchase for row %d", row_index)
+            handler(row_index)
