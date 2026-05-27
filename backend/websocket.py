@@ -128,10 +128,63 @@ def register_socketio_events(
         """Relay target amount changes."""
         emit("target_amount_changed", data, broadcast=True)
 
-    @socketio.on("verified_match")
-    def on_verified_match(data: dict):
-        """Receive verified unregistered match from scraper and broadcast."""
-        emit("verified_match", data, broadcast=True)
+    @socketio.on("card_status")
+    def on_card_status(data: dict):
+        """Receive card status from scraper and broadcast to all clients."""
+        emit("card_status", data, broadcast=True)
+
+    @socketio.on("initiate_purchase")
+    def on_initiate_purchase(data: dict):
+        """Relay initiate_purchase from frontend to scraper."""
+        row_index = data.get("row_index")
+        if row_index is None:
+            logger.warning("initiate_purchase received without row_index")
+            return
+        if _scraper_sid:
+            emit("initiate_purchase", {"row_index": row_index}, room=_scraper_sid)
+            logger.info("Relayed initiate_purchase to scraper (row %d)", row_index)
+        else:
+            logger.warning("Scraper not connected — cannot relay initiate_purchase")
+            emit("purchase_card_error", {
+                "row_index": row_index,
+                "reason": "Scraper not connected",
+            })
+
+    @socketio.on("purchase_preview")
+    def on_purchase_preview(data: dict):
+        """Receive purchase preview from scraper and broadcast."""
+        emit("purchase_preview", data, broadcast=True)
+
+    @socketio.on("confirm_purchase")
+    def on_confirm_purchase(data: dict):
+        """Relay confirm_purchase from frontend to scraper."""
+        row_index = data.get("row_index")
+        if row_index is None:
+            logger.warning("confirm_purchase received without row_index")
+            return
+        if _scraper_sid:
+            emit("confirm_purchase", {"row_index": row_index}, room=_scraper_sid)
+            logger.info("Relayed confirm_purchase to scraper (row %d)", row_index)
+        else:
+            logger.warning("Scraper not connected — cannot relay confirm_purchase")
+
+    @socketio.on("cancel_purchase")
+    def on_cancel_purchase(data: dict):
+        """Relay cancel_purchase from frontend to scraper."""
+        row_index = data.get("row_index")
+        if row_index is None:
+            logger.warning("cancel_purchase received without row_index")
+            return
+        if _scraper_sid:
+            emit("cancel_purchase", {"row_index": row_index}, room=_scraper_sid)
+            logger.info("Relayed cancel_purchase to scraper (row %d)", row_index)
+        else:
+            logger.warning("Scraper not connected — cannot relay cancel_purchase")
+
+    @socketio.on("purchase_complete")
+    def on_purchase_complete(data: dict):
+        """Receive purchase complete from scraper and broadcast."""
+        emit("purchase_complete", data, broadcast=True)
 
     @socketio.on("scraper_control")
     def on_scraper_control(data: dict):
