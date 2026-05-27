@@ -19,17 +19,54 @@ export interface CardInfo {
 
 export type ScraperState = "running" | "paused" | "restarting" | "error" | "unknown";
 
+export type RegistrationStatus = "unregistered" | "registered" | "unknown";
+
+export interface CardStatus {
+  card_number: number;
+  status: RegistrationStatus;
+  id: string | null;
+  bin: string | null;
+  balance: number | null;
+  price: number | null;
+  currency: string;
+  rate: number | null;
+  raw_text: string;
+}
+
+export interface PurchasePreview {
+  card_number: number | null;
+  button_row: number;
+  id: string | null;
+  bin: string | null;
+  balance: number | null;
+  price: number | null;
+  currency: string;
+  rate: number | null;
+  status: RegistrationStatus;
+  raw_text: string;
+}
+
+export interface PurchaseComplete {
+  card_number: number | null;
+  success: boolean;
+  reason?: string;
+}
+
 interface UseSocketReturn {
   status: ConnectionStatus;
   logs: string[];
   lastRefresh: string | null;
   cards: CardInfo[];
-  verifiedCards: Set<number>;
+  cardStatuses: Map<number, CardStatus>;
+  purchasePreview: PurchasePreview | null;
+  purchaseComplete: PurchaseComplete | null;
   scrapeCount: number;
   targetAmount: number;
   scraperState: ScraperState;
   sendControl: (action: "pause" | "resume" | "restart") => void;
-  sendPurchase: (rowIndex: number) => void;
+  initiatePurchase: (rowIndex: number) => void;
+  confirmPurchase: (rowIndex: number) => void;
+  cancelPurchase: (rowIndex: number) => void;
 }
 
 export function useSocket(): UseSocketReturn {
@@ -41,7 +78,9 @@ export function useSocket(): UseSocketReturn {
   const [scrapeCount, setScrapeCount] = useState<number>(0);
   const [targetAmount, setTargetAmount] = useState<number>(50);
   const [scraperState, setScraperState] = useState<ScraperState>("unknown");
-  const [verifiedCards, setVerifiedCards] = useState<Set<number>>(new Set());
+  const [cardStatuses, setCardStatuses] = useState<Map<number, CardStatus>>(new Map());
+  const [purchasePreview, setPurchasePreview] = useState<PurchasePreview | null>(null);
+  const [purchaseComplete, setPurchaseComplete] = useState<PurchaseComplete | null>(null);
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -80,13 +119,13 @@ export function useSocket(): UseSocketReturn {
 
     socket.on("cards_update", (data: { cards: CardInfo[]; timestamp: number }) => {
       setCards(data.cards);
-      // Prune verified cards that are no longer in the listing
-      setVerifiedCards((prev) => {
+      // Prune card statuses for cards that are no longer in the listing
+      setCardStatuses((prev) => {
         const currentNumbers = new Set(data.cards.map((c) => c.card_number));
-        const next = new Set<number>();
-        for (const num of prev) {
+        const next = new Map<number, CardStatus>();
+        for (const [num, status] of prev) {
           if (currentNumbers.has(num)) {
-            next.add(num);
+            next.set(num, status);
           }
         }
         return next;
@@ -94,9 +133,26 @@ export function useSocket(): UseSocketReturn {
       addLog(`📋 Cards updated: ${data.cards.length} cards`);
     });
 
-    socket.on("verified_match", (data: CardInfo) => {
-      setVerifiedCards((prev) => new Set(prev).add(data.card_number));
-      addLog(`✅ Verified unregistered: card #${data.card_number}`);
+    socket.on("card_status", (data: CardStatus) => {
+      setCardStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(data.card_number, data);
+        return next;
+      });
+      const emoji = data.status === "unregistered" ? "🟢" : data.status === "registered" ? "🔴" : "⚪";
+      addLog(`${emoji} Card #${data.card_number}: ${data.status} (id=${data.id}, bin=${data.bin}, balance=$${data.balance}, price=$${data.price})`);
+    });
+
+    socket.on("purchase_preview", (data: PurchasePreview) => {
+      setPurchasePreview(data);
+      addLog(`🔍 Purchase preview received for card #${data.card_number}`);
+    });
+
+    socket.on("purchase_complete", (data: PurchaseComplete) => {
+      setPurchaseComplete(data);
+      setPurchasePreview(null);
+      const emoji = data.success ? "✅" : "❌";
+      addLog(`${emoji} Purchase complete for card #${data.card_number}: ${data.success ? "success" : data.reason || "failed"}`);
     });
 
     socket.on("scrape_count", (data: { count: number }) => {
@@ -126,12 +182,30 @@ export function useSocket(): UseSocketReturn {
     };
   }, [addLog]);
 
-  const sendPurchase = useCallback((rowIndex: number) => {
+  const initiatePurchase = useCallback((rowIndex: number) => {
     if (socketRef.current) {
-      socketRef.current.emit("purchase_card", { row_index: rowIndex });
-      addLog(`🛒 Purchase requested for row ${rowIndex}`);
+      socketRef.current.emit("initiate_purchase", { row_index: rowIndex });
+      addLog(`🛒 Initiate purchase for row ${rowIndex}`);
     } else {
-      addLog("⚠️ Not connected — cannot send purchase request");
+      addLog("⚠️ Not connected — cannot initiate purchase");
+    }
+  }, [addLog]);
+
+  const confirmPurchase = useCallback((rowIndex: number) => {
+    if (socketRef.current) {
+      socketRef.current.emit("confirm_purchase", { row_index: rowIndex });
+      addLog(`✅ Confirm purchase for row ${rowIndex}`);
+    } else {
+      addLog("⚠️ Not connected — cannot confirm purchase");
+    }
+  }, [addLog]);
+
+  const cancelPurchase = useCallback((rowIndex: number) => {
+    if (socketRef.current) {
+      socketRef.current.emit("cancel_purchase", { row_index: rowIndex });
+      addLog(`❌ Cancel purchase for row ${rowIndex}`);
+    } else {
+      addLog("⚠️ Not connected — cannot cancel purchase");
     }
   }, [addLog]);
 
@@ -146,11 +220,15 @@ export function useSocket(): UseSocketReturn {
     logs,
     lastRefresh,
     cards,
-    verifiedCards,
+    cardStatuses,
+    purchasePreview,
+    purchaseComplete,
     scrapeCount,
     targetAmount,
     scraperState,
     sendControl,
-    sendPurchase,
+    initiatePurchase,
+    confirmPurchase,
+    cancelPurchase,
   };
 }
